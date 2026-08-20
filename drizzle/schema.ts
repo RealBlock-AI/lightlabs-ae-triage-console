@@ -1,28 +1,34 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { datetime, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
+  name: text("name"), email: varchar("email", { length: 320 }), loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(), updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(), lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
+
+export const teamMembers = mysqlTable("team_members", {
+  id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 160 }).notNull(), email: varchar("email", { length: 255 }).notNull(), role: mysqlEnum("role", ["ae", "lab_director", "admin"]).notNull(),
+});
+export const accounts = mysqlTable("accounts", {
+  id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 200 }).notNull(), accountType: mysqlEnum("account_type", ["brand", "coman"]).notNull(), annualSpend: int("annual_spend").notNull(), slackChannel: varchar("slack_channel", { length: 100 }), ownerId: varchar("owner_id", { length: 64 }).notNull(),
+});
+export const contacts = mysqlTable("contacts", {
+  id: varchar("id", { length: 64 }).primaryKey(), accountId: varchar("account_id", { length: 64 }).notNull(), name: varchar("name", { length: 160 }).notNull(), email: varchar("email", { length: 255 }), slackUserId: varchar("slack_user_id", { length: 100 }), roleTitle: varchar("role_title", { length: 160 }), hasPlatformLogin: int("has_platform_login").notNull().default(0),
+}, table => [index("contacts_account_idx").on(table.accountId), uniqueIndex("contacts_slack_unique").on(table.slackUserId)]);
+export const products = mysqlTable("products", { id: varchar("id", { length: 64 }).primaryKey(), accountId: varchar("account_id", { length: 64 }).notNull(), name: varchar("name", { length: 200 }).notNull(), category: varchar("category", { length: 100 }).notNull(), servingSizeG: decimal("serving_size_g", { precision: 10, scale: 2 }) });
+export const lots = mysqlTable("lots", { id: varchar("id", { length: 64 }).primaryKey(), productId: varchar("product_id", { length: 64 }).notNull(), comanId: varchar("coman_id", { length: 64 }), producedAt: datetime("produced_at").notNull() });
+export const orders = mysqlTable("orders", { id: varchar("id", { length: 64 }).primaryKey(), accountId: varchar("account_id", { length: 64 }).notNull(), placedAt: datetime("placed_at").notNull(), promisedAt: datetime("promised_at"), status: varchar("status", { length: 64 }).notNull(), queuePosition: int("queue_position"), assayGroup: varchar("assay_group", { length: 100 }) });
+export const tests = mysqlTable("tests", { id: varchar("id", { length: 64 }).primaryKey(), orderId: varchar("order_id", { length: 64 }), lotId: varchar("lot_id", { length: 64 }), assay: varchar("assay", { length: 100 }).notNull(), status: varchar("status", { length: 64 }).notNull(), completedAt: datetime("completed_at") });
+export const results = mysqlTable("results", { id: varchar("id", { length: 64 }).primaryKey(), testId: varchar("test_id", { length: 64 }).notNull(), analyte: varchar("analyte", { length: 100 }).notNull(), value: decimal("value", { precision: 14, scale: 4 }), unit: varchar("unit", { length: 64 }).notNull(), isNonDetect: int("is_non_detect").notNull().default(0), loq: decimal("loq", { precision: 14, scale: 4 }), reportedAt: datetime("reported_at").notNull() });
+export const specs = mysqlTable("specs", { id: varchar("id", { length: 64 }).primaryKey(), scope: varchar("scope", { length: 64 }).notNull(), scopeId: varchar("scope_id", { length: 64 }), category: varchar("category", { length: 100 }), analyte: varchar("analyte", { length: 100 }).notNull(), limitValue: decimal("limit_value", { precision: 14, scale: 4 }), limitUnit: varchar("limit_unit", { length: 64 }), source: varchar("source", { length: 100 }).notNull(), citation: text("citation"), isPlaceholder: int("is_placeholder").notNull().default(0) });
+export const kbEntries = mysqlTable("kb_entries", { id: varchar("id", { length: 64 }).primaryKey(), questionPattern: varchar("question_pattern", { length: 255 }).notNull(), answer: text("answer").notNull(), author: varchar("author", { length: 160 }).notNull(), approvedBy: varchar("approved_by", { length: 160 }), createdAt: datetime("created_at").notNull() });
+export const interactions = mysqlTable("interactions", {
+  id: varchar("id", { length: 80 }).primaryKey(), source: varchar("source", { length: 32 }).notNull(), channelRef: varchar("channel_ref", { length: 180 }), contactId: varchar("contact_id", { length: 64 }), accountId: varchar("account_id", { length: 64 }), ownerId: varchar("owner_id", { length: 64 }), receivedAt: datetime("received_at").notNull(), rawText: text("raw_text").notNull(), intents: json("intents").$type<string[]>(), confidence: decimal("confidence", { precision: 5, scale: 4 }), imminentAction: int("imminent_action").notNull().default(0), classifierMethod: varchar("classifier_method", { length: 40 }).notNull(), baseLane: mysqlEnum("base_lane", ["auto", "assisted", "escalate"]), lane: mysqlEnum("lane", ["auto", "assisted", "escalate"]).notNull(), laneReasons: json("lane_reasons").$type<string[]>().notNull(), acknowledgment: text("acknowledgment").notNull(), draft: text("draft"), evidence: json("evidence").$type<Array<{ label: string; value: string; source: string; citable: boolean }>>().notNull(), precedent: json("precedent").$type<{ answer: string; author: string; approvedBy?: string | null }>(), sendAllowed: int("send_allowed").notNull().default(0), sendDisabled: int("send_disabled").notNull().default(0), status: mysqlEnum("status", ["open", "awaiting_customer", "auto_resolved", "resolved"]).notNull().default("open"), msToAck: int("ms_to_ack").notNull(), humanMinutesSaved: decimal("human_minutes_saved", { precision: 8, scale: 2 }).notNull().default("0"), queuePriority: int("queue_priority").notNull(), slaMinutes: int("sla_minutes").notNull(), resolvedAt: datetime("resolved_at"), resolvedBy: varchar("resolved_by", { length: 64 }),
+}, table => [uniqueIndex("interaction_dedup_unique").on(table.source, table.channelRef), index("interaction_owner_idx").on(table.ownerId, table.lane, table.receivedAt), index("interaction_account_idx").on(table.accountId)]);
+export const responseFeedback = mysqlTable("response_feedback", { id: varchar("id", { length: 80 }).primaryKey(), interactionId: varchar("interaction_id", { length: 80 }).notNull(), userId: varchar("user_id", { length: 64 }).notNull(), draftedText: text("drafted_text"), sentText: text("sent_text").notNull(), editRatio: decimal("edit_ratio", { precision: 6, scale: 4 }).notNull(), category: varchar("category", { length: 100 }).notNull(), lane: varchar("lane", { length: 32 }).notNull(), overrideReason: text("override_reason"), createdAt: datetime("created_at").notNull() });
+export const clarifications = mysqlTable("clarifications", { id: varchar("id", { length: 80 }).primaryKey(), interactionId: varchar("interaction_id", { length: 80 }).notNull(), question: text("question").notNull(), askedAt: datetime("asked_at").notNull(), answeredAt: datetime("answered_at") });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
-
-// TODO: Add your tables here

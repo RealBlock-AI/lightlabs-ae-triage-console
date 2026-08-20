@@ -8,6 +8,8 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { runTriage } from "../triage";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,8 +34,30 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
+  app.use(express.json({ limit: "50mb", verify: (req, _res, buffer) => { (req as express.Request & { rawBody?: string }).rawBody = buffer.toString("utf8"); } }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.post("/ingest", async (req, res) => {
+    const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
+    const demoMode = process.env.TRIAGE_DEMO_MODE !== "false";
+    if (!demoMode && !validSlackRequest(req, raw)) return res.status(401).json({ ok: false, error: "Invalid Slack request signature." });
+    const body = req.body as Record<string, unknown>;
+    if (body.type === "url_verification") return res.json({ challenge: body.challenge });
+    const event = body.event && typeof body.event === "object" ? body.event as Record<string, unknown> : body;
+    const eventIsEnvelope = Boolean(body.event);
+    const source = eventIsEnvelope ? "slack" : event.source;
+    const slackUserId = event.user ?? event.slack_user_id;
+    const channel = event.channel;
+    const timestamp = event.ts ?? event.timestamp;
+    const text = event.text;
+    if (source !== "slack" || typeof slackUserId !== "string" || typeof channel !== "string" || typeof timestamp !== "string" || typeof text !== "string") return res.status(400).json({ ok: false, error: "Expected a Slack message event or simplified demo-shaped body." });
+    try {
+      const result = await runTriage({ source: "slack", channelRef: `${channel}|${timestamp}`, slackUserId, rawText: text });
+      return res.json({ ok: true, duplicate: result.duplicate, interactionId: result.interaction.id, acknowledgment: result.interaction.acknowledgment, lane: result.interaction.lane, msToAck: result.interaction.msToAck });
+    } catch (error) {
+      console.error("ingest failed", error);
+      return res.status(500).json({ ok: false, error: "Unable to persist triage interaction." });
+    }
+  });
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   // tRPC API
@@ -64,3 +88,12 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+
+function validSlackRequest(req: express.Request, raw: string) {
+  const secret = process.env.SLACK_SIGNING_SECRET;
+  const timestamp = req.header("x-slack-request-timestamp");
+  const signature = req.header("x-slack-signature");
+  if (!secret || !timestamp || !signature || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${raw}`).digest("hex")}`;
+  return signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
