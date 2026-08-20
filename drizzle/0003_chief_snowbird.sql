@@ -1,0 +1,1 @@
+ALTER TABLE `knowledge_documents` MODIFY COLUMN `content` mediumtext NOT NULL;

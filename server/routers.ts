@@ -4,6 +4,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { APPENDIX_A, capacity, ensureDemoData, getItemForViewer, getQueue, recordSend, requestClarification, resolveItem, runFixture } from "./triage";
+import { listKnowledgeSources, refreshKnowledgeSource, retrieveKnowledge } from "./knowledge";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -27,6 +28,11 @@ export const appRouter = router({
     clarify: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema, question: z.string().min(1) })).mutation(({ input }) => requestClarification(input.interactionId, input.viewerId, input.question)),
     resolve: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema })).mutation(({ input }) => resolveItem(input.interactionId, input.viewerId)),
     capacity: publicProcedure.query(() => capacity()),
+  }),
+  knowledge: router({
+    sources: publicProcedure.query(() => listKnowledgeSources()),
+    search: publicProcedure.input(z.object({ query: z.string().min(3).max(2000), interactionId: z.string().optional(), limit: z.number().int().min(1).max(5).optional() })).query(({ input }) => retrieveKnowledge(input)),
+    refreshSource: publicProcedure.input(z.object({ sourceId: z.string().min(1), viewerId: z.literal("usr_admin") })).mutation(({ input }) => refreshKnowledgeSource(input.sourceId)),
   }),
 });
 

@@ -10,4 +10,15 @@
 - [x] Build the Appendix A demo controls, persona switcher, capacity view, and access-denied page
 - [x] Add automated tests for safety, persistence, ownership isolation, and demo workflows
 - [x] Validate responsive rendered UI and backend behavior
-- [ ] Save a deployment checkpoint and deliver permanent-hosting handoff
+- [x] Save a deployment checkpoint and deliver permanent-hosting handoff
+- [x] Define the production Slack Events API payload contract and signing-verification requirements
+- [x] Define the MCP server tool surface, OAuth resource server model, and Slack connector configuration
+- [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
+- [x] Define a deterministic verified-answer policy: answer only when every required fact is current, cited, authorized, and complete; otherwise queue
+- [x] Define the HubSpot MCP data-enrichment contract and least-privilege authorization model
+- [ ] Implement HubSpot-backed contact, company, ticket, and recent-case enrichment for queued Slack support interactions
+- [x] Add verified Slack and HubSpot contact identity records with contact name and email ownership data
+- [x] Add attributable Light Labs website knowledge-source, document, and retrieval records from the supplied URL inventory
+- [x] Expose a relevance-scored knowledge retrieval endpoint and MCP tool contract that return the required source shape
+- [ ] Enforce the knowledge answer gate so uncited, low-relevance, or incomplete retrieval queues the inquiry
+- [ ] Implement the signed Slack Identity Auth MCP endpoint and `triage.retrieve_knowledge` tool after Slack app credentials are configured

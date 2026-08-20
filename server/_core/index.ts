@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { runTriage } from "../triage";
+import { retrieveKnowledge } from "../knowledge";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -51,11 +52,22 @@ async function startServer() {
     const text = event.text;
     if (source !== "slack" || typeof slackUserId !== "string" || typeof channel !== "string" || typeof timestamp !== "string" || typeof text !== "string") return res.status(400).json({ ok: false, error: "Expected a Slack message event or simplified demo-shaped body." });
     try {
-      const result = await runTriage({ source: "slack", channelRef: `${channel}|${timestamp}`, slackUserId, rawText: text });
+      const workspaceId = typeof body.team_id === "string" ? body.team_id : typeof event.team_id === "string" ? event.team_id : demoMode && !eventIsEnvelope ? "T_DEMO" : null;
+      const result = await runTriage({ source: "slack", channelRef: `${channel}|${timestamp}`, slackUserId, slackWorkspaceId: workspaceId, rawText: text });
       return res.json({ ok: true, duplicate: result.duplicate, interactionId: result.interaction.id, acknowledgment: result.interaction.acknowledgment, lane: result.interaction.lane, msToAck: result.interaction.msToAck });
     } catch (error) {
       console.error("ingest failed", error);
       return res.status(500).json({ ok: false, error: "Unable to persist triage interaction." });
+    }
+  });
+  app.post("/knowledge/retrieve", async (req, res) => {
+    const query = typeof req.body?.query === "string" ? req.body.query : "";
+    const interactionId = typeof req.body?.interaction_id === "string" ? req.body.interaction_id : undefined;
+    try {
+      const result = await retrieveKnowledge({ query, interactionId, limit: 3 });
+      return res.json({ sources: result.sources });
+    } catch (error) {
+      return res.status(400).json({ sources: [], error: error instanceof Error ? error.message : "Knowledge retrieval failed." });
     }
   });
   registerStorageProxy(app);
