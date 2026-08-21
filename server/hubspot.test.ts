@@ -31,7 +31,7 @@ describe("HubSpot MCP OAuth setup", () => {
   it("discovers the live HubSpot MCP read-only tool contract before CRM enrichment", async () => {
     const tools = await listHubSpotMcpTools();
     expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining(["get_user_details", "search_crm_objects", "get_crm_objects", "search_conversations"]));
-  });
+  }, 15_000);
 
   it("rejects an unverified non-numeric HubSpot contact identity before any CRM lookup", async () => {
     await expect(refreshHubSpotContactContext({ contactId: "con_demo", hubspotContactId: "not-a-crm-id" })).rejects.toThrow(/verified numeric HubSpot contact ID/i);

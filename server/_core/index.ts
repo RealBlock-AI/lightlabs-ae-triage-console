@@ -16,6 +16,7 @@ import { getItemForViewer, getQueue, runTriage } from "../triage";
 import { getKnowledgeSection, retrieveKnowledge } from "../knowledge";
 import { completeHubSpotAuthorization } from "../hubspot";
 import { capturePendingMcpIdentity } from "../mcpIdentity";
+import { recordIntegrationAudit } from "../integrationAudit";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -42,6 +43,7 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb", verify: (req, _res, buffer) => { (req as express.Request & { rawBody?: string }).rawBody = buffer.toString("utf8"); } }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(["/ingest", "/mcp"], (req, res, next) => { const startedAt = Date.now(); res.on("finish", () => { const body = req.body as Record<string, unknown> | undefined; const event = body?.event && typeof body.event === "object" ? body.event as Record<string, unknown> : body; const slackMeta = body?.params && typeof body.params === "object" ? (body.params as Record<string, unknown>)._meta as { slack?: { user_id?: string; team_id?: string; userId?: string; teamId?: string } } | undefined : undefined; const workspaceId = typeof body?.team_id === "string" ? body.team_id : typeof event?.team_id === "string" ? event.team_id : slackMeta?.slack?.team_id ?? slackMeta?.slack?.teamId ?? null; const userId = typeof event?.user === "string" ? event.user : slackMeta?.slack?.user_id ?? slackMeta?.slack?.userId ?? null; void recordIntegrationAudit({ surface: req.path === "/mcp" ? "mcp" : "slack_ingest", eventType: req.path === "/mcp" ? String(body?.method ?? "unknown") : String(body?.type ?? event?.type ?? "unknown"), outcome: res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "rejected" : "accepted", statusCode: res.statusCode, slackWorkspaceId: workspaceId, slackUserId: userId, method: req.path === "/mcp" ? String(body?.method ?? "unknown") : null, toolName: req.path === "/mcp" && body?.params && typeof body.params === "object" ? String((body.params as Record<string, unknown>).name ?? "") || null : null, metadata: { durationMs: Date.now() - startedAt, isEventEnvelope: Boolean(body?.event) } }); }); next(); });
   app.post("/ingest", async (req, res) => {
     const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
     const demoMode = process.env.TRIAGE_DEMO_MODE !== "false";

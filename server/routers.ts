@@ -8,6 +8,7 @@ import { APPENDIX_A, capacity, ensureDemoData, getItemForViewer, getQueue, recor
 import { getKnowledgeDocument, getKnowledgeSection, listKnowledgeSources, refreshKnowledgeSource, retrieveKnowledge } from "./knowledge";
 import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listAccountsForContactMapping, listContactMappings, refreshHubSpotContactContext, searchHubSpotContactsByEmail, verifyAndMapContact, verifyHubSpotMcpConnection } from "./hubspot";
 import { approveMcpIdentityRequest, listInternalTeamMembers, listMcpIdentityRequests } from "./mcpIdentity";
+import { listIntegrationAudit } from "./integrationAudit";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -57,6 +58,7 @@ export const appRouter = router({
     teamMembers: adminProcedure.query(() => listInternalTeamMembers()),
     approveIdentity: adminProcedure.input(z.object({ requestId: z.string().min(1), teamMemberId: z.string().min(1) })).mutation(({ input }) => approveMcpIdentityRequest(input)),
   }),
+  integrationAudit: router({ recent: adminProcedure.input(z.object({ surface: z.enum(["mcp", "slack_ingest"]).optional() }).optional()).query(({ input }) => listIntegrationAudit(input?.surface)) }),
 });
 
 export type AppRouter = typeof appRouter;
