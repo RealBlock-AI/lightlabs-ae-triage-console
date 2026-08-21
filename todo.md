@@ -25,3 +25,5 @@
 - [x] Register the published HubSpot OAuth redirect URL in a HubSpot MCP Auth App and collect its client credentials
 - [x] Add a secure manual HubSpot authorization-code fallback for environments blocked by Cloudflare browser challenges
 - [x] Make the HubSpot MCP authorization entry point visible from the primary queue view and publish the current integration release
+- [x] Consume the received HubSpot OAuth callback and verify the encrypted CRM connection
+- [x] Simplify HubSpot onboarding to a direct Connect action and redirect successful authorization to the integration page

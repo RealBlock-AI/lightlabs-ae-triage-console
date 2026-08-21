@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus } from "./hubspot";
+import { beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listHubSpotMcpTools, refreshHubSpotContactContext, verifyHubSpotMcpConnection } from "./hubspot";
 
 describe("HubSpot MCP OAuth setup", () => {
   it("creates a PKCE authorization URL with the published callback and records a pending server-side session", async () => {
@@ -12,12 +12,28 @@ describe("HubSpot MCP OAuth setup", () => {
     expect(url.searchParams.get("state")).toHaveLength(43);
   });
 
-  it("does not report a HubSpot connection before the user completes OAuth consent", async () => {
+  it("reports only non-sensitive HubSpot connection status after OAuth consent", async () => {
     const status = await getHubSpotConnectionStatus();
-    expect(status.connected).toBe(false);
+    expect(status).toMatchObject({ connected: expect.any(Boolean), updatedAt: expect.anything() });
+    expect(status).not.toHaveProperty("accessTokenEncrypted");
+    expect(status).not.toHaveProperty("refreshTokenEncrypted");
   });
 
   it("refuses a manual callback URL from any origin other than the registered Light Labs callback", async () => {
     await expect(completeHubSpotCallbackUrl("https://example.com/integrations/hubspot/callback?code=abc&state=def")).rejects.toThrow(/registered Light Labs HubSpot callback/i);
+  });
+
+  it("performs a read-only authenticated HubSpot MCP health check", async () => {
+    const verification = await verifyHubSpotMcpConnection();
+    expect(verification.connected).toBe(true);
+  });
+
+  it("discovers the live HubSpot MCP read-only tool contract before CRM enrichment", async () => {
+    const tools = await listHubSpotMcpTools();
+    expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining(["get_user_details", "search_crm_objects", "get_crm_objects", "search_conversations"]));
+  });
+
+  it("rejects an unverified non-numeric HubSpot contact identity before any CRM lookup", async () => {
+    await expect(refreshHubSpotContactContext({ contactId: "con_demo", hubspotContactId: "not-a-crm-id" })).rejects.toThrow(/verified numeric HubSpot contact ID/i);
   });
 });

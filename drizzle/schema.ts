@@ -44,6 +44,9 @@ export const hubspotOauthSessions = mysqlTable("hubspot_oauth_sessions", {
 export const hubspotConnections = mysqlTable("hubspot_connections", {
   id: varchar("id", { length: 96 }).primaryKey(), connectedByUserId: varchar("connected_by_user_id", { length: 64 }).notNull(), portalId: varchar("portal_id", { length: 64 }), accessTokenEncrypted: text("access_token_encrypted").notNull(), refreshTokenEncrypted: text("refresh_token_encrypted").notNull(), accessTokenExpiresAt: datetime("access_token_expires_at"), status: mysqlEnum("status", ["active", "revoked", "error"]).notNull().default("active"), connectedAt: datetime("connected_at").notNull(), updatedAt: datetime("updated_at").notNull(),
 }, table => [index("hubspot_connections_status_idx").on(table.status, table.updatedAt)]);
+export const hubspotContextSnapshots = mysqlTable("hubspot_context_snapshots", {
+  id: varchar("id", { length: 96 }).primaryKey(), contactId: varchar("contact_id", { length: 64 }).notNull(), hubspotContactId: varchar("hubspot_contact_id", { length: 64 }).notNull(), sourceObjectIds: json("source_object_ids").$type<string[]>().notNull(), context: json("context").$type<Record<string, unknown>>().notNull(), retrievedAt: datetime("retrieved_at").notNull(), status: mysqlEnum("status", ["available", "unavailable", "error"]).notNull(), errorCode: varchar("error_code", { length: 120 }),
+}, table => [index("hubspot_context_contact_idx").on(table.contactId, table.retrievedAt), index("hubspot_context_hubspot_contact_idx").on(table.hubspotContactId, table.retrievedAt)]);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

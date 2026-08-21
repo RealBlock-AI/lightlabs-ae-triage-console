@@ -80,7 +80,7 @@ async function startServer() {
     }
     try {
       await completeHubSpotAuthorization({ code: req.query.code, state: req.query.state });
-      return res.status(200).send("HubSpot MCP connection established. You may close this window and return to Light Labs.");
+      return res.redirect(303, "/integrations/hubspot?connected=1");
     } catch (error) {
       return res.status(400).send(error instanceof Error ? `HubSpot authorization failed: ${error.message}` : "HubSpot authorization failed.");
     }
