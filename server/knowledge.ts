@@ -21,6 +21,16 @@ export const LIGHT_LABS_KNOWLEDGE_CATALOG: SourceSeed[] = [
 const now = () => new Date();
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 const terms = (value: string) => Array.from(new Set(normalize(value).split(" ").filter(term => term.length > 2 && !["the", "and", "for", "with", "from", "what", "does", "about", "this", "that", "have", "need"].includes(term))));
+const toMarkdown = (html: string) => { const body = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] ?? html; return body.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "").replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, "\n# $1\n").replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "\n## $1\n").replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, "\n### $1\n").replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "\n- $1").replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "\n$1\n").replace(/<br\s*\/?>/gi, "\n").replace(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, "\"").replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim(); };
+const sectionIndexFor = (content: string) => content.split(/\n(?=#{1,3}\s)/).map(section => { const [headingLine, ...body] = section.trim().split("\n"); const heading = headingLine.replace(/^#{1,3}\s+/, "").trim() || "Overview"; return { heading, anchor: heading.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), excerpt: body.join(" ").replace(/\s+/g, " ").slice(0, 220) }; }).filter(section => section.heading || section.excerpt).slice(0, 30);
+const summaryFor = (source: Pick<SourceSeed, "title" | "canonicalUrl" | "sourceType" | "answerSafety">, content: string) => { const sections = sectionIndexFor(content); const topics = Array.from(new Set([...terms(source.title), ...terms(sections.map(section => section.heading).join(" "))])).slice(0, 12); return [
+  `title: ${JSON.stringify(source.title)}`,
+  `canonical_url: ${source.canonicalUrl}`,
+  `source_type: ${source.sourceType}`,
+  `answer_safety: ${source.answerSafety}`,
+  "topics:", ...topics.map(topic => `  - ${topic}`),
+  "sections:", ...sections.map(section => `  - heading: ${JSON.stringify(section.heading)}\n    anchor: ${section.anchor}\n    preview: ${JSON.stringify(section.excerpt)}`),
+].join("\n"); };
 
 export async function ensureKnowledgeCatalog() {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
@@ -39,8 +49,9 @@ export async function indexKnowledgeDocument(input: { sourceId: string; content:
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const source = (await db.select().from(knowledgeSources).where(eq(knowledgeSources.id, input.sourceId)).limit(1))[0]; if (!source) throw new Error("Knowledge source is not in the approved catalog.");
   const content = input.content.trim(); if (content.length < 80) throw new Error("Knowledge document is too short to index safely.");
-  const hash = createHash("sha256").update(content).digest("hex"); const capturedAt = input.fetchedAt ?? now();
-  await db.insert(knowledgeDocuments).values({ id: `kd_${nanoid(18)}`, sourceId: source.id, content, contentHash: hash, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" }).onDuplicateKeyUpdate({ set: { content, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" } });
+  const hash = createHash("sha256").update(content).digest("hex"); const capturedAt = input.fetchedAt ?? now(); const sections = sectionIndexFor(content); const summaryYaml = summaryFor(source, content);
+  await db.update(knowledgeDocuments).set({ status: "superseded" }).where(and(eq(knowledgeDocuments.sourceId, source.id), eq(knowledgeDocuments.status, "indexed")));
+  await db.insert(knowledgeDocuments).values({ id: `kd_${nanoid(18)}`, sourceId: source.id, content, summaryYaml, sectionIndex: sections, contentHash: hash, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" }).onDuplicateKeyUpdate({ set: { content, summaryYaml, sectionIndex: sections, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" } });
   await db.update(knowledgeSources).set({ lastFetchedAt: capturedAt, updatedAt: now() }).where(eq(knowledgeSources.id, source.id));
 }
 
@@ -49,8 +60,22 @@ export async function refreshKnowledgeSource(sourceId: string) {
   const source = (await db.select().from(knowledgeSources).where(and(eq(knowledgeSources.id, sourceId), eq(knowledgeSources.retrievalStatus, "eligible"))).limit(1))[0]; if (!source) throw new Error("Approved knowledge source not found.");
   const response = await fetch(source.canonicalUrl, { headers: { "user-agent": "LightLabs-Triage-Knowledge/1.0" }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`Knowledge fetch failed with HTTP ${response.status}.`);
-  const html = await response.text(); const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
-  await indexKnowledgeDocument({ sourceId, content: text }); return { sourceId, characters: text.length };
+  const html = await response.text(); const markdown = toMarkdown(html);
+  await indexKnowledgeDocument({ sourceId, content: markdown }); return { sourceId, characters: markdown.length };
+}
+
+export async function getKnowledgeDocument(sourceId: string) {
+  await ensureKnowledgeCatalog(); const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const row = (await db.select({ source: knowledgeSources, document: knowledgeDocuments }).from(knowledgeSources).leftJoin(knowledgeDocuments, and(eq(knowledgeDocuments.sourceId, knowledgeSources.id), eq(knowledgeDocuments.status, "indexed"))).where(eq(knowledgeSources.id, sourceId)).orderBy(desc(knowledgeDocuments.indexedAt)).limit(1))[0];
+  if (!row?.source) throw new Error("Knowledge source not found.");
+  return { source: row.source, document: row.document ? { id: row.document.id, markdown: row.document.content, summaryYaml: row.document.summaryYaml, sectionIndex: row.document.sectionIndex, fetchedAt: row.document.fetchedAt } : null };
+}
+
+export async function getKnowledgeSection(sourceId: string, anchor: string) {
+  const detail = await getKnowledgeDocument(sourceId); if (!detail.document) throw new Error("This approved source has not been indexed yet.");
+  const section = (detail.document.sectionIndex ?? []).find(item => item.anchor === anchor); if (!section) throw new Error("The requested section does not exist in this knowledge source.");
+  const lines = detail.document.markdown.split("\n"); const start = lines.findIndex(line => line.replace(/^#{1,3}\s+/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") === anchor); const body = start >= 0 ? lines.slice(start, lines.findIndex((line, index) => index > start && /^#{1,3}\s+/.test(line)) > start ? lines.findIndex((line, index) => index > start && /^#{1,3}\s+/.test(line)) : undefined).join("\n").trim() : section.excerpt;
+  return { source: { title: detail.source.title, url: detail.source.canonicalUrl, answerSafety: detail.source.answerSafety }, section: { ...section, markdown: body } };
 }
 
 function relevance(query: string, title: string, content: string) {
@@ -66,10 +91,10 @@ export async function retrieveKnowledge(input: { query: string; interactionId?: 
   await ensureKnowledgeCatalog(); const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const query = input.query.trim(); if (query.length < 3) throw new Error("A knowledge query must include at least three characters.");
   const rows = await db.select({ source: knowledgeSources, document: knowledgeDocuments }).from(knowledgeDocuments).innerJoin(knowledgeSources, eq(knowledgeDocuments.sourceId, knowledgeSources.id)).where(and(eq(knowledgeDocuments.status, "indexed"), eq(knowledgeSources.retrievalStatus, "eligible"))).orderBy(desc(knowledgeDocuments.indexedAt));
-  const candidates = rows.map(({ source, document }) => ({ title: source.title, url: source.canonicalUrl, snippet: excerpt(document.content, query), score: relevance(query, source.title, document.content), answerSafety: source.answerSafety })).filter(match => match.score >= 0.35).sort((a, b) => b.score - a.score);
+  const candidates = rows.map(({ source, document }) => ({ sourceId: source.id, title: source.title, url: source.canonicalUrl, snippet: excerpt(document.content, query), score: relevance(query, source.title, document.content), answerSafety: source.answerSafety, summaryYaml: document.summaryYaml, sectionIndex: document.sectionIndex ?? [] })).filter(match => match.score >= 0.35).sort((a, b) => b.score - a.score);
   const matches = candidates.filter((match, index, all) => all.findIndex(candidate => candidate.url === match.url) === index).slice(0, Math.min(Math.max(input.limit ?? 3, 1), 5));
   const gateReasons = matches.length ? [] : ["No attributable indexed source matched the request."]; if (matches[0] && matches[0].score < 0.82) gateReasons.push("Top retrieval relevance is below the verified-answer threshold."); if (matches.some(match => match.answerSafety === "review_required")) gateReasons.push("Retrieved content requires human review and cannot independently open the answer gate.");
   const gate = gateReasons.length ? "closed" as const : "open" as const;
   await db.insert(knowledgeRetrievalEvents).values({ id: `kr_${nanoid(18)}`, queryText: query, interactionId: input.interactionId ?? null, retrievedAt: now(), topScore: String(matches[0]?.score ?? 0), sourceCount: matches.length, gate, reasons: gateReasons });
-  return { sources: matches.map(({ answerSafety: _answerSafety, ...source }) => ({ ...source, score: Number(source.score.toFixed(4)) })), gate: { status: gate, reasons: gateReasons } };
+  return { sources: matches.map(({ sourceId: _sourceId, answerSafety: _answerSafety, summaryYaml: _summaryYaml, sectionIndex: _sectionIndex, ...source }) => ({ ...source, score: Number(source.score.toFixed(4)) })), plans: matches.map(match => ({ sourceId: match.sourceId, title: match.title, summaryYaml: match.summaryYaml, relevantSections: match.sectionIndex.filter(section => relevance(query, section.heading, section.excerpt) >= 0.2).slice(0, 3) })), gate: { status: gate, reasons: gateReasons } };
 }

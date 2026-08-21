@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ensureKnowledgeCatalog, indexKnowledgeDocument, listKnowledgeSources, retrieveKnowledge } from "./knowledge";
+import { ensureKnowledgeCatalog, getKnowledgeDocument, getKnowledgeSection, indexKnowledgeDocument, listKnowledgeSources, retrieveKnowledge } from "./knowledge";
 import { runTriage } from "./triage";
 
 describe("verified identity and knowledge retrieval", () => {
@@ -29,7 +29,19 @@ describe("verified identity and knowledge retrieval", () => {
     expect(supported.sources[0]).toMatchObject({ title: expect.any(String), url: "https://www.lightlabs.com/tests/allergen", score: expect.any(Number) });
     expect(new Set(supported.sources.map(source => source.url)).size).toBe(supported.sources.length);
     expect(supported.gate.status).toBe("open");
+    expect(supported.plans[0]?.summaryYaml).toContain("canonical_url:");
     expect(unsupported.sources.every(source => source.score < 0.82)).toBe(true);
     expect(unsupported.gate.status).toBe("closed");
+  });
+
+  it("preserves readable Markdown and returns a specifically requested section instead of requiring a full-document read", async () => {
+    await indexKnowledgeDocument({ sourceId: "k_test_allergen", content: "# Allergen testing\n\nOverview of the approved assay menu.\n\n## Turnaround\n\nTypical turnaround is two business days for this test menu.\n\n## Samples\n\nFollow the approved sample-handling instructions." });
+    const document = await getKnowledgeDocument("k_test_allergen");
+    const turnaround = await getKnowledgeSection("k_test_allergen", "turnaround");
+    expect(document.document?.markdown).toContain("## Turnaround");
+    expect(document.document?.summaryYaml).toContain("sections:");
+    expect(document.document?.sectionIndex?.map(section => section.anchor)).toContain("turnaround");
+    expect(turnaround.section.markdown).toContain("Typical turnaround is two business days");
+    expect(turnaround.section.markdown).not.toContain("approved sample-handling");
   });
 });

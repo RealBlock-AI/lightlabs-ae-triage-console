@@ -13,7 +13,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { teamMembers } from "../../drizzle/schema";
 import { getItemForViewer, getQueue, runTriage } from "../triage";
-import { retrieveKnowledge } from "../knowledge";
+import { getKnowledgeSection, retrieveKnowledge } from "../knowledge";
 import { completeHubSpotAuthorization } from "../hubspot";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -77,28 +77,31 @@ async function startServer() {
   app.post("/mcp", async (req, res) => {
     const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
     if (!validSlackRequest(req, raw)) return res.status(401).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Invalid Slack request signature." } });
+    res.setHeader("Mcp-Protocol-Version", "2025-06-18");
     const body = req.body as { id?: string | number | null; method?: string; params?: Record<string, unknown> };
     const id = body.id ?? null;
     const respond = (result: unknown) => res.json({ jsonrpc: "2.0", id, result });
     const toolError = (message: string) => respond({ content: [{ type: "text", text: message }], isError: true });
     if (body.method === "initialize") return respond({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "light-labs-triage", version: "1.0.0" } });
     if (body.method === "notifications/initialized") return res.status(202).end();
+    if (body.method === "tools/list") return respond({ tools: [
+      { name: "triage.retrieve_knowledge", description: "Retrieve attributable Light Labs knowledge for an internal AE. Retrieval relevance never authorizes a customer reply.", inputSchema: { type: "object", additionalProperties: false, required: ["query"], properties: { query: { type: "string", minLength: 3 }, interaction_id: { type: "string" } } } },
+      { name: "triage.get_knowledge_section", description: "Read one specifically cited Markdown section after first retrieving its compact plan. Does not return an entire document.", inputSchema: { type: "object", additionalProperties: false, required: ["source_id", "anchor"], properties: { source_id: { type: "string" }, anchor: { type: "string" } } } },
+      { name: "triage.search_queue", description: "List only the signed caller's assigned triage queue.", inputSchema: { type: "object", additionalProperties: false, properties: { lane: { type: "string", enum: ["auto", "assisted", "escalate"] } } } },
+      { name: "triage.get_interaction", description: "Get a decision packet only when the signed caller owns the interaction.", inputSchema: { type: "object", additionalProperties: false, required: ["interaction_id"], properties: { interaction_id: { type: "string" } } } },
+    ] });
     const slackMeta = body.params?._meta as { slack?: { user_id?: string; team_id?: string; userId?: string; teamId?: string } } | undefined;
     const slackUserId = slackMeta?.slack?.user_id ?? slackMeta?.slack?.userId; const slackWorkspaceId = slackMeta?.slack?.team_id ?? slackMeta?.slack?.teamId;
     const db = await getDb(); const member = db && slackUserId && slackWorkspaceId ? (await db.select().from(teamMembers).where(and(eq(teamMembers.slackUserId, slackUserId), eq(teamMembers.slackWorkspaceId, slackWorkspaceId))).limit(1))[0] : undefined;
     if (!member) return res.status(403).json({ jsonrpc: "2.0", id, error: { code: -32003, message: "No authorized Light Labs team member matches this signed Slack identity." } });
-    if (body.method === "tools/list") return respond({ tools: [
-      { name: "triage.retrieve_knowledge", description: "Retrieve attributable Light Labs knowledge for an internal AE. Retrieval relevance never authorizes a customer reply.", inputSchema: { type: "object", additionalProperties: false, required: ["query"], properties: { query: { type: "string", minLength: 3 }, interaction_id: { type: "string" } } } },
-      { name: "triage.search_queue", description: "List only the signed caller's assigned triage queue.", inputSchema: { type: "object", additionalProperties: false, properties: { lane: { type: "string", enum: ["auto", "assisted", "escalate"] } } } },
-      { name: "triage.get_interaction", description: "Get a decision packet only when the signed caller owns the interaction.", inputSchema: { type: "object", additionalProperties: false, required: ["interaction_id"], properties: { interaction_id: { type: "string" } } } },
-    ] });
     if (body.method !== "tools/call") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported MCP method." } });
     const tool = body.params?.name; const args = (body.params?.arguments ?? {}) as Record<string, unknown>;
     try {
       if (tool === "triage.retrieve_knowledge") {
         const query = typeof args.query === "string" ? args.query : ""; const interactionId = typeof args.interaction_id === "string" ? args.interaction_id : undefined; const knowledge = await retrieveKnowledge({ query, interactionId, limit: 3 });
-        return respond({ content: [{ type: "text", text: JSON.stringify({ sources: knowledge.sources, reply_eligibility: { status: knowledge.gate.status, reasons: knowledge.gate.reasons } }) }] });
+        return respond({ content: [{ type: "text", text: JSON.stringify({ sources: knowledge.sources, retrieval_plan: knowledge.plans, reply_eligibility: { status: knowledge.gate.status, reasons: knowledge.gate.reasons } }) }] });
       }
+      if (tool === "triage.get_knowledge_section") { const sourceId = typeof args.source_id === "string" ? args.source_id : ""; const anchor = typeof args.anchor === "string" ? args.anchor : ""; const section = await getKnowledgeSection(sourceId, anchor); return respond({ content: [{ type: "text", text: JSON.stringify(section) }] }); }
       if (tool === "triage.search_queue") { const lane = args.lane === "auto" || args.lane === "assisted" || args.lane === "escalate" ? args.lane : undefined; const queue = await getQueue(member.id, lane); return respond({ content: [{ type: "text", text: JSON.stringify(queue) }] }); }
       if (tool === "triage.get_interaction") { const interactionId = typeof args.interaction_id === "string" ? args.interaction_id : ""; const item = await getItemForViewer(interactionId, member.id); if (!item) return toolError("Interaction not found in this AE queue."); return respond({ content: [{ type: "text", text: JSON.stringify(item) }] }); }
       return toolError("Unknown Light Labs MCP tool.");

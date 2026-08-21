@@ -14,6 +14,10 @@
 - [x] Define the production Slack Events API payload contract and signing-verification requirements
 - [x] Define the MCP server tool surface, OAuth resource server model, and Slack connector configuration
 - [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
+- [x] Diagnose and correct Slackbot MCP connection registration, transport, and identity-auth behavior
+- [ ] Capture and approve signed internal Slack identities so real Slackbot callers can use the MCP tools
+- [x] Preserve source documents as readable Markdown and add concise structured summaries for retrieval planning
+- [x] Add a knowledge-detail experience that lets AEs and tools inspect cited sections without loading full documents
 - [x] Define a deterministic verified-answer policy: answer only when every required fact is current, cited, authorized, and complete; otherwise queue
 - [x] Define the HubSpot MCP data-enrichment contract and least-privilege authorization model
 - [x] Implement HubSpot-backed contact, company, ticket, and recent-case enrichment for queued Slack support interactions

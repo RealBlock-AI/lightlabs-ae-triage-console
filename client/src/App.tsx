@@ -10,6 +10,7 @@ import Capacity from "./pages/Capacity";
 import HubSpot from "./pages/HubSpot";
 import ContactMapping from "./pages/ContactMapping";
 import SlackConnections from "./pages/SlackConnections";
+import KnowledgeLibrary from "./pages/KnowledgeLibrary";
 import DashboardLayout from "./components/DashboardLayout";
 
 function Router() {
@@ -22,6 +23,7 @@ function Router() {
         <Route path={"/integrations/hubspot"} component={HubSpot} />
         <Route path={"/integrations/mapping"} component={ContactMapping} />
         <Route path={"/connections/slack"} component={SlackConnections} />
+        <Route path={"/knowledge"} component={KnowledgeLibrary} />
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>

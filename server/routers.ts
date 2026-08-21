@@ -5,7 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { APPENDIX_A, capacity, ensureDemoData, getItemForViewer, getQueue, recordSend, requestClarification, resolveItem, runFixture } from "./triage";
-import { listKnowledgeSources, refreshKnowledgeSource, retrieveKnowledge } from "./knowledge";
+import { getKnowledgeDocument, getKnowledgeSection, listKnowledgeSources, refreshKnowledgeSource, retrieveKnowledge } from "./knowledge";
 import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listAccountsForContactMapping, listContactMappings, refreshHubSpotContactContext, searchHubSpotContactsByEmail, verifyAndMapContact, verifyHubSpotMcpConnection } from "./hubspot";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
@@ -34,6 +34,8 @@ export const appRouter = router({
   }),
   knowledge: router({
     sources: publicProcedure.query(() => listKnowledgeSources()),
+    document: publicProcedure.input(z.object({ sourceId: z.string().min(1) })).query(({ input }) => getKnowledgeDocument(input.sourceId)),
+    section: publicProcedure.input(z.object({ sourceId: z.string().min(1), anchor: z.string().min(1) })).query(({ input }) => getKnowledgeSection(input.sourceId, input.anchor)),
     search: publicProcedure.input(z.object({ query: z.string().min(3).max(2000), interactionId: z.string().optional(), limit: z.number().int().min(1).max(5).optional() })).query(({ input }) => retrieveKnowledge(input)),
     refreshSource: publicProcedure.input(z.object({ sourceId: z.string().min(1), viewerId: z.literal("usr_admin") })).mutation(({ input }) => refreshKnowledgeSource(input.sourceId)),
   }),
