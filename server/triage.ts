@@ -42,6 +42,7 @@ const seed = async () => {
 
 async function supplementalSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   const upsert = <T extends { id: string }>(table: any, values: T[]) => db.insert(table).values(values as any).onDuplicateKeyUpdate({ set: { id: sql`values(id)` } });
+  await db.insert(teamMembers).values([{ id: "usr_sarah", name: "Sarah Chen", email: "sarah@lightlabs.demo", role: "ae", slackUserId: "U_AE_SARAH", slackWorkspaceId: "T_DEMO" }, { id: "usr_marcus", name: "Marcus Reid", email: "marcus@lightlabs.demo", role: "ae", slackUserId: "U_AE_MARCUS", slackWorkspaceId: "T_DEMO" }, { id: "usr_elena", name: "Dr. Elena Vasquez", email: "elena@lightlabs.demo", role: "lab_director", slackUserId: "U_LAB_ELENA", slackWorkspaceId: "T_DEMO" }, { id: "usr_admin", name: "Demo Admin", email: "admin@lightlabs.demo", role: "admin", slackUserId: "U_ADMIN", slackWorkspaceId: "T_DEMO" }]).onDuplicateKeyUpdate({ set: { slackUserId: sql`values(slack_user_id)`, slackWorkspaceId: sql`values(slack_workspace_id)` } });
   const verifiedContacts = [
     ["con_pine_qc", "hs_pine_qc"], ["con_northwind_ops", "hs_north_ops"], ["con_lumen_qa", "hs_lumen_qa"], ["con_verdant_qa", "hs_verdant_qa"], ["con_harborline_qa", "hs_harbor_qa"], ["con_summit_owner", "hs_summit_owner"], ["con_riverstone_qa", "hs_river_qa"],
   ] as const;

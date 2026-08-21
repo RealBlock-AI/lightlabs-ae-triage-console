@@ -50,6 +50,13 @@
       "when": 1787276749745,
       "tag": "0006_neat_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787276974306,
+      "tag": "0007_smiling_deathstrike",
+      "breakpoints": true
     }
   ]
 }

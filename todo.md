@@ -21,7 +21,7 @@
 - [x] Add attributable Light Labs website knowledge-source, document, and retrieval records from the supplied URL inventory
 - [x] Expose a relevance-scored knowledge retrieval endpoint and MCP tool contract that return the required source shape
 - [x] Enforce the knowledge answer gate so uncited, low-relevance, or incomplete retrieval queues the inquiry
-- [ ] Implement the signed Slack Identity Auth MCP endpoint and `triage.retrieve_knowledge` tool after Slack app credentials are configured
+- [x] Implement the signed Slack Identity Auth MCP endpoint and `triage.retrieve_knowledge` tool after Slack app credentials are configured
 - [x] Register the published HubSpot OAuth redirect URL in a HubSpot MCP Auth App and collect its client credentials
 - [x] Add a secure manual HubSpot authorization-code fallback for environments blocked by Cloudflare browser challenges
 - [x] Make the HubSpot MCP authorization entry point visible from the primary queue view and publish the current integration release

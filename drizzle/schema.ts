@@ -9,8 +9,8 @@ export const users = mysqlTable("users", {
 });
 
 export const teamMembers = mysqlTable("team_members", {
-  id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 160 }).notNull(), email: varchar("email", { length: 255 }).notNull(), role: mysqlEnum("role", ["ae", "lab_director", "admin"]).notNull(),
-});
+  id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 160 }).notNull(), email: varchar("email", { length: 255 }).notNull(), role: mysqlEnum("role", ["ae", "lab_director", "admin"]).notNull(), slackUserId: varchar("slack_user_id", { length: 100 }), slackWorkspaceId: varchar("slack_workspace_id", { length: 64 }),
+}, table => [uniqueIndex("team_members_slack_identity_unique").on(table.slackWorkspaceId, table.slackUserId)]);
 export const accounts = mysqlTable("accounts", {
   id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 200 }).notNull(), accountType: mysqlEnum("account_type", ["brand", "coman"]).notNull(), annualSpend: int("annual_spend").notNull(), slackChannel: varchar("slack_channel", { length: 100 }), ownerId: varchar("owner_id", { length: 64 }).notNull(),
 });
