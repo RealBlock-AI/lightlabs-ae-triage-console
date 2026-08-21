@@ -18,5 +18,5 @@ describe("configured HubSpot MCP Auth App credentials", () => {
     const payload = await response.json() as { error?: string };
     expect(payload.error).not.toBe("invalid_client");
     expect(["invalid_request", "invalid_grant"]).toContain(payload.error);
-  });
+  }, 15_000);
 });

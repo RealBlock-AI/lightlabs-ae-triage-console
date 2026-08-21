@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listHubSpotMcpTools, refreshHubSpotContactContext, verifyHubSpotMcpConnection } from "./hubspot";
+import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listHubSpotMcpTools, refreshHubSpotContactContext, verifyHubSpotMcpConnection } from "./hubspot";
 
 describe("HubSpot MCP OAuth setup", () => {
   it("creates a PKCE authorization URL with the published callback and records a pending server-side session", async () => {
@@ -26,7 +26,7 @@ describe("HubSpot MCP OAuth setup", () => {
   it("performs a read-only authenticated HubSpot MCP health check", async () => {
     const verification = await verifyHubSpotMcpConnection();
     expect(verification.connected).toBe(true);
-  });
+  }, 15_000);
 
   it("discovers the live HubSpot MCP read-only tool contract before CRM enrichment", async () => {
     const tools = await listHubSpotMcpTools();
@@ -35,5 +35,9 @@ describe("HubSpot MCP OAuth setup", () => {
 
   it("rejects an unverified non-numeric HubSpot contact identity before any CRM lookup", async () => {
     await expect(refreshHubSpotContactContext({ contactId: "con_demo", hubspotContactId: "not-a-crm-id" })).rejects.toThrow(/verified numeric HubSpot contact ID/i);
+  });
+
+  it("requires a complete Slack identity when an administrator begins a verified contact mapping", async () => {
+    await expect(addPendingContactMapping({ accountId: "acct_northwind", name: "Customer Test", email: "customer@example.test", slackWorkspaceId: "", slackUserId: "U_TEST" })).rejects.toThrow(/workspace ID/i);
   });
 });

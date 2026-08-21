@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ensureDemoData, getItemForViewer, getQueue, recordSend, requestClarification, runFixture, runTriage } from "./triage";
 import { getDb } from "./db";
-import { orders } from "../drizzle/schema";
+import { contacts, hubspotContextSnapshots, orders } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 describe("permanent AE triage safety contract", () => {
@@ -63,5 +63,26 @@ describe("permanent AE triage safety contract", () => {
       expect(result.interaction.accountId).toBeTruthy();
       expect(result.interaction.ownerId).toBeTruthy();
     }
+  }, 15_000);
+
+  it("requires a fresh verified HubSpot snapshot before a live Slack contact receives CRM-enriched handling", async () => {
+    const db = await getDb();
+    await db!.update(contacts).set({ hubspotContactId: "123", identityStatus: "verified" }).where(eq(contacts.id, "con_northwind_ops"));
+    await db!.delete(hubspotContextSnapshots).where(eq(hubspotContextSnapshots.contactId, "con_northwind_ops"));
+    const live = await runTriage({ source: "slack", channelRef: `crm-freshness|${Date.now()}`, slackUserId: "U_NORTH_OPS", slackWorkspaceId: "T_DEMO", rawText: "Any update on my order?" });
+    expect(live.interaction.lane).toBe("escalate");
+    expect(live.interaction.laneReasons).toContain("Force-escalated: no fresh verified HubSpot context snapshot exists for this Slack sender.");
+    expect((await getItemForViewer(live.interaction.id, "usr_sarah"))?.hubspotContext).toBeNull();
+  });
+
+  it("recognizes a fresh verified HubSpot snapshot for a mapped live Slack sender", async () => {
+    const db = await getDb();
+    await db!.update(contacts).set({ hubspotContactId: "123", identityStatus: "verified" }).where(eq(contacts.id, "con_northwind_ops"));
+    await db!.insert(hubspotContextSnapshots).values({ id: `hctx_test_${Date.now()}`, contactId: "con_northwind_ops", hubspotContactId: "123", sourceObjectIds: ["123", "company_7", "ticket_100"], context: { contact: { properties: { firstname: "Priya", lastname: "Shah", email: "priya@example.com" } }, company: { results: [{ properties: { name: "Northwind Nutrition" } }] }, recentTickets: { results: [{ id: "ticket_100" }, { id: "ticket_101" }] }, recentConversations: { results: [{ id: "conversation_1" }] } }, retrievedAt: new Date(), status: "available", errorCode: null });
+    const live = await runTriage({ source: "slack", channelRef: `crm-present|${Date.now()}`, slackUserId: "U_NORTH_OPS", slackWorkspaceId: "T_DEMO", rawText: "Any update on my order?" });
+    expect(live.interaction.contactId).toBe("con_northwind_ops");
+    expect(live.interaction.laneReasons).not.toContain("Force-escalated: no fresh verified HubSpot context snapshot exists for this Slack sender.");
+    const detail = await getItemForViewer(live.interaction.id, "usr_sarah");
+    expect(detail?.hubspotContext).toMatchObject({ source: "HubSpot MCP · read-only verified snapshot" });
   });
 });

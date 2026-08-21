@@ -16,7 +16,11 @@
 - [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
 - [x] Define a deterministic verified-answer policy: answer only when every required fact is current, cited, authorized, and complete; otherwise queue
 - [x] Define the HubSpot MCP data-enrichment contract and least-privilege authorization model
-- [ ] Implement HubSpot-backed contact, company, ticket, and recent-case enrichment for queued Slack support interactions
+- [x] Implement HubSpot-backed contact, company, ticket, and recent-case enrichment for queued Slack support interactions
+- [x] Attach fresh verified HubSpot context to queued interaction detail and display its source-attributed CRM summary to AEs
+- [x] Prove queued interaction detail exposes CRM context only for a fresh mapped sender and never for stale or unmapped senders
+- [x] Render a structured source-attributed HubSpot CRM summary instead of raw snapshot JSON in interaction detail
+- [x] Prove interaction detail omits HubSpot context for stale or unmapped senders and shows it only for fresh verified mappings
 - [x] Add verified Slack and HubSpot contact identity records with contact name and email ownership data
 - [x] Add attributable Light Labs website knowledge-source, document, and retrieval records from the supplied URL inventory
 - [x] Expose a relevance-scored knowledge retrieval endpoint and MCP tool contract that return the required source shape
@@ -27,3 +31,8 @@
 - [x] Make the HubSpot MCP authorization entry point visible from the primary queue view and publish the current integration release
 - [x] Consume the received HubSpot OAuth callback and verify the encrypted CRM connection
 - [x] Simplify HubSpot onboarding to a direct Connect action and redirect successful authorization to the integration page
+- [x] Add an administrator workflow to map verified Slack senders to HubSpot contacts and Light Labs accounts
+- [x] Add a plain-language Slack communication guide that distinguishes inbound Events API triage from Slackbot MCP queries
+- [x] Integrate verified mapping outcomes into the live Slack triage and Slackbot data-access boundaries
+- [x] Refresh and persist a HubSpot context snapshot immediately after an exact-email contact mapping
+- [x] Prove a fresh mapped HubSpot context is recognized by live Slack triage while absent or stale context is force-escalated

@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
-import { hubspotConnections, hubspotContextSnapshots, hubspotOauthSessions } from "../drizzle/schema";
+import { accounts, contacts, hubspotConnections, hubspotContextSnapshots, hubspotOauthSessions } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 const REDIRECT_URI = "https://lighttriage-gdngkmys.manus.space/integrations/hubspot/callback";
@@ -126,6 +126,70 @@ function extractMcpObject(result: unknown) {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content ?? [];
   const text = content.filter(item => item.type === "text" && item.text).map(item => item.text).join("\n");
   try { return JSON.parse(text) as Record<string, unknown>; } catch { return { summary: text.slice(0, 12_000) }; }
+}
+
+function collectRecords(value: unknown, records: Record<string, unknown>[] = []) {
+  if (Array.isArray(value)) { value.forEach(item => collectRecords(item, records)); return records; }
+  if (!value || typeof value !== "object") return records;
+  const record = value as Record<string, unknown>;
+  if (record.id || record.properties) records.push(record);
+  Object.values(record).forEach(item => collectRecords(item, records));
+  return records;
+}
+
+function findText(value: unknown, field: string): string | null {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) { for (const item of value) { const found = findText(item, field); if (found) return found; } return null; }
+  const record = value as Record<string, unknown>;
+  if (typeof record[field] === "string") return record[field] as string;
+  for (const item of Object.values(record)) { const found = findText(item, field); if (found) return found; }
+  return null;
+}
+
+export async function listContactMappings() {
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const rows = await db.select({ contact: contacts, account: accounts }).from(contacts).leftJoin(accounts, eq(contacts.accountId, accounts.id)).orderBy(contacts.name);
+  return rows.map(({ contact, account }) => ({ id: contact.id, name: contact.name, email: contact.email, accountName: account?.name ?? "Unassigned", slackUserId: contact.slackUserId, slackWorkspaceId: contact.slackWorkspaceId, hubspotContactId: contact.hubspotContactId, identityStatus: contact.identityStatus, verifiedAt: contact.verifiedAt }));
+}
+
+export async function listAccountsForContactMapping() {
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  return db.select({ id: accounts.id, name: accounts.name }).from(accounts).orderBy(accounts.name);
+}
+
+export async function addPendingContactMapping(input: { accountId: string; name: string; email: string; slackWorkspaceId: string; slackUserId: string }) {
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const email = input.email.trim().toLowerCase(); const name = input.name.trim(); const slackWorkspaceId = input.slackWorkspaceId.trim(); const slackUserId = input.slackUserId.trim();
+  if (!name || !email.includes("@") || !slackWorkspaceId || !slackUserId) throw new Error("Name, verified email, Slack workspace ID, and Slack user ID are required.");
+  const account = (await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, input.accountId)).limit(1))[0]; if (!account) throw new Error("Choose a valid Light Labs account.");
+  const existing = (await db.select({ id: contacts.id }).from(contacts).where(and(eq(contacts.slackWorkspaceId, slackWorkspaceId), eq(contacts.slackUserId, slackUserId))).limit(1))[0]; if (existing) throw new Error("This Slack workspace and user are already mapped to a Light Labs contact.");
+  const id = `con_${nanoid(16)}`;
+  await db.insert(contacts).values({ id, accountId: input.accountId, name, email, slackUserId, slackWorkspaceId, hubspotPortalId: null, hubspotContactId: null, identityStatus: "pending", verifiedAt: null, roleTitle: null, hasPlatformLogin: 0 });
+  return { id, identityStatus: "pending" as const };
+}
+
+export async function searchHubSpotContactsByEmail(email: string) {
+  const normalized = email.trim().toLowerCase(); if (!normalized.includes("@")) throw new Error("A verified customer email address is required.");
+  const result = await callHubSpotReadTool("search_crm_objects", { objectType: "contacts", query: normalized, properties: ["firstname", "lastname", "email", "company"], limit: 5 });
+  const records = collectRecords(extractMcpObject(result.result)); const unique = new Map<string, { id: string; name: string; email: string | null; company: string | null }>();
+  for (const record of records) {
+    const properties = (record.properties ?? {}) as Record<string, unknown>; const id = String(record.id ?? properties.hs_object_id ?? ""); const candidateEmail = typeof properties.email === "string" ? properties.email : findText(record, "email");
+    if (!id || !candidateEmail || candidateEmail.toLowerCase() !== normalized) continue;
+    const first = typeof properties.firstname === "string" ? properties.firstname : findText(record, "firstname") ?? ""; const last = typeof properties.lastname === "string" ? properties.lastname : findText(record, "lastname") ?? ""; const company = typeof properties.company === "string" ? properties.company : findText(record, "company");
+    unique.set(id, { id, name: `${first} ${last}`.trim() || candidateEmail, email: candidateEmail, company });
+  }
+  return Array.from(unique.values());
+}
+
+export async function verifyAndMapContact(input: { contactId: string; hubspotContactId: string }) {
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const contact = (await db.select().from(contacts).where(eq(contacts.id, input.contactId)).limit(1))[0];
+  if (!contact?.email) throw new Error("This Light Labs contact must have a verified email before it can be mapped.");
+  const candidates = await searchHubSpotContactsByEmail(contact.email); const candidate = candidates.find(item => item.id === input.hubspotContactId);
+  if (!candidate) throw new Error("The selected HubSpot contact does not exactly match the Light Labs contact email.");
+  const connection = await getHubSpotConnectionStatus();
+  await db.update(contacts).set({ hubspotContactId: candidate.id, hubspotPortalId: connection.portalId ?? "connected_mcp", identityStatus: "verified", verifiedAt: now() }).where(eq(contacts.id, contact.id));
+  return { id: contact.id, hubspotContactId: candidate.id, email: candidate.email, verified: true as const };
 }
 
 export async function refreshHubSpotContactContext(input: { contactId: string; hubspotContactId: string }) {
