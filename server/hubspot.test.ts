@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listHubSpotMcpTools, refreshHubSpotContactContext, verifyHubSpotMcpConnection } from "./hubspot";
 
+const runLiveHubSpotChecks = process.env.RUN_LIVE_HUBSPOT_TESTS === "true";
+
 describe("HubSpot MCP OAuth setup", () => {
   it("creates a PKCE authorization URL with the published callback and records a pending server-side session", async () => {
     const result = await beginHubSpotAuthorization("usr_admin");
@@ -23,12 +25,12 @@ describe("HubSpot MCP OAuth setup", () => {
     await expect(completeHubSpotCallbackUrl("https://example.com/integrations/hubspot/callback?code=abc&state=def")).rejects.toThrow(/registered Light Labs HubSpot callback/i);
   });
 
-  it("performs a read-only authenticated HubSpot MCP health check", async () => {
+  it.runIf(runLiveHubSpotChecks)("performs a read-only authenticated HubSpot MCP health check", async () => {
     const verification = await verifyHubSpotMcpConnection();
     expect(verification.connected).toBe(true);
   }, 15_000);
 
-  it("discovers the live HubSpot MCP read-only tool contract before CRM enrichment", async () => {
+  it.runIf(runLiveHubSpotChecks)("discovers the live HubSpot MCP read-only tool contract before CRM enrichment", async () => {
     const tools = await listHubSpotMcpTools();
     expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining(["get_user_details", "search_crm_objects", "get_crm_objects", "search_conversations"]));
   }, 15_000);

@@ -47,7 +47,8 @@ async function startServer() {
   app.post("/ingest", async (req, res) => {
     const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
     const demoMode = process.env.TRIAGE_DEMO_MODE !== "false";
-    if (!demoMode && !validSlackRequest(req, raw)) return res.status(401).json({ ok: false, error: "Invalid Slack request signature." });
+    const verification = verifySlackRequest(req, raw);
+    if (!demoMode && !verification.ok) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "signature_rejected", outcome: "rejected", statusCode: 401, metadata: { verificationFailure: verification.reason } }); return res.status(401).json({ ok: false, error: "Invalid Slack request signature." }); }
     const body = req.body as Record<string, unknown>;
     if (body.type === "url_verification") return res.json({ challenge: body.challenge });
     const event = body.event && typeof body.event === "object" ? body.event as Record<string, unknown> : body;
@@ -79,7 +80,8 @@ async function startServer() {
   });
   app.post("/mcp", async (req, res) => {
     const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
-    if (!validSlackRequest(req, raw)) return res.status(401).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Invalid Slack request signature." } });
+    const verification = verifySlackRequest(req, raw);
+    if (!verification.ok) { await recordIntegrationAudit({ surface: "mcp", eventType: "signature_rejected", outcome: "rejected", statusCode: 401, metadata: { verificationFailure: verification.reason } }); return res.status(401).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Invalid Slack request signature." } }); }
     res.setHeader("Mcp-Protocol-Version", "2025-06-18");
     const body = req.body as { id?: string | number | null; method?: string; params?: Record<string, unknown> };
     const id = body.id ?? null;
@@ -155,11 +157,15 @@ async function startServer() {
 
 startServer().catch(console.error);
 
-function validSlackRequest(req: express.Request, raw: string) {
+function verifySlackRequest(req: express.Request, raw: string): { ok: boolean; reason?: "missing_secret" | "missing_headers" | "invalid_timestamp" | "stale_timestamp" | "signature_mismatch" } {
   const secret = process.env.SLACK_SIGNING_SECRET;
   const timestamp = req.header("x-slack-request-timestamp");
   const signature = req.header("x-slack-signature");
-  if (!secret || !timestamp || !signature || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  if (!secret) return { ok: false, reason: "missing_secret" };
+  if (!timestamp || !signature) return { ok: false, reason: "missing_headers" };
+  const timestampNumber = Number(timestamp);
+  if (!Number.isFinite(timestampNumber)) return { ok: false, reason: "invalid_timestamp" };
+  if (Math.abs(Date.now() / 1000 - timestampNumber) > 300) return { ok: false, reason: "stale_timestamp" };
   const expected = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${raw}`).digest("hex")}`;
-  return signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  return signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) ? { ok: true } : { ok: false, reason: "signature_mismatch" };
 }
