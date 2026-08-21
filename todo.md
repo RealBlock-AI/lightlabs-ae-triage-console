@@ -14,9 +14,14 @@
 - [x] Define the production Slack Events API payload contract and signing-verification requirements
 - [x] Define the MCP server tool surface, OAuth resource server model, and Slack connector configuration
 - [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
-- [ ] Reconcile the Bobby `resolve_support_request` contract with verified Light Labs identity, knowledge, and safety gates
-- [ ] Implement a constrained Bobby-compatible support-resolution MCP tool with request idempotency and privacy controls
-- [ ] Validate the Bobby tool with safe response cases and deliver finalized integration decisions
+- [x] Reconcile the Bobby `resolve_support_request` contract with verified Light Labs identity, knowledge, and safety gates
+- [x] Implement a constrained Bobby-compatible support-resolution MCP tool with request idempotency and privacy controls
+- [x] Validate the Bobby tool with safe response cases and deliver finalized integration decisions
+- [x] Add Bobby regression coverage for verified mapped requests that must escalate without fresh CRM context or an approved reply path
+- [x] Add Bobby regression coverage for verified requests that require additional identifying information
+- [x] Document and test the intentionally blocked `answered` status until approved response templates exist
+- [x] Prove a verified Bobby sender with fresh context and sufficient detail still escalates without an approved response template
+- [x] Prove the v0.1 Bobby policy cannot emit `answered` for an otherwise fully verified request
 - [x] Assess and normalize the account-to-contact relationship for verified Slack and HubSpot identity resolution
 - [x] Evaluate knowledge source, document, section, and summary tables for Markdown preservation and retrieval efficiency
 - [x] Produce a prioritized database field-type, constraint, index, and auditability improvement roadmap

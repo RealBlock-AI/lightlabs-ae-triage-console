@@ -77,6 +77,8 @@ The following input fields are **untrusted hints**, not authoritative identity o
 
 The `confidence` field in Bobby’s response must never be interpreted as permission to reply. If used, it is explicitly **classification confidence — non-dispositive**. Light Labs sends an `answered` result only if the verified-answer policy has passed: customer identity, account authority, fresh context, current citable evidence, retrieval relevance, and a versioned response template must all be present.
 
+> **Current v0.1 implementation:** `answered` is intentionally disabled. The application has no versioned, human-approved Bobby customer-response templates yet, so every otherwise valid request remains `escalate` after evidence and context checks. This is a safety boundary, not an incomplete confidence calculation.
+
 | Status | When Light Labs returns it | `answer_markdown` | Bobby behavior |
 |---|---|---|---|
 | `answered` | Every verified-answer gate passes | Approved answer grounded in cited sources | Bobby may post the answer with citations. |
