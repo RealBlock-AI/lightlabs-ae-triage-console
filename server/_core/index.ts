@@ -17,6 +17,7 @@ import { getKnowledgeSection, retrieveKnowledge } from "../knowledge";
 import { completeHubSpotAuthorization } from "../hubspot";
 import { capturePendingMcpIdentity } from "../mcpIdentity";
 import { recordIntegrationAudit } from "../integrationAudit";
+import { customBotHealth, customBotIngest } from "../customBot";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -68,6 +69,8 @@ async function startServer() {
       return res.status(500).json({ ok: false, error: "Unable to persist triage interaction." });
     }
   });
+  app.get("/integrations/slack-bot/health", customBotHealth);
+  app.post("/integrations/slack-bot/ingest", customBotIngest);
   app.post("/knowledge/retrieve", async (req, res) => {
     const query = typeof req.body?.query === "string" ? req.body.query : "";
     const interactionId = typeof req.body?.interaction_id === "string" ? req.body.interaction_id : undefined;

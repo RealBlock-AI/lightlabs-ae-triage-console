@@ -21,9 +21,12 @@
 - [x] Inspect MCP and Slack ingest audit evidence for the reported Slackbot non-response
 - [x] Add durable privacy-minimized audit events for signed MCP discovery, MCP tool calls, and Slack ingest outcomes
 - [ ] Review the supplied integration-hardening guidance and implement applicable safety-compatible improvements
-- [ ] Diagnose and correct the live Slack Events API signing-secret mismatch causing 401 rejections
-- [ ] Verify the latest retried Slack deliveries against the durable audit trail
-- [ ] Record privacy-safe Slack signature failure reasons to isolate app-secret, header, and timestamp mismatches
+- [x] Diagnose the live Slack Events API rejection and identify the custom-bot missing-header transport mismatch
+- [x] Verify the latest retried Slack deliveries against the durable audit trail
+- [x] Verify whether the custom bot now forwards an authenticated request after its signing-secret update
+- [x] Provide the custom bot builder a corrective authenticated-ingestion implementation prompt after confirming delivery remains invalid
+- [x] Record privacy-safe Slack signature failure reasons to isolate app-secret, header, and timestamp mismatches
+- [x] Implement the dedicated authenticated custom-bot ingestion endpoint and configure its server-side integration secret
 - [x] Preserve source documents as readable Markdown and add concise structured summaries for retrieval planning
 - [x] Add a knowledge-detail experience that lets AEs and tools inspect cited sections without loading full documents
 - [x] Define a deterministic verified-answer policy: answer only when every required fact is current, cited, authorized, and complete; otherwise queue
