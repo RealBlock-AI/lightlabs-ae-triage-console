@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ensureKnowledgeCatalog, getKnowledgeDocument, getKnowledgeSection, indexKnowledgeDocument, listKnowledgeSources, retrieveKnowledge } from "./knowledge";
 import { runTriage } from "./triage";
+import { getDb } from "./db";
+import { knowledgeSections } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 describe("verified identity and knowledge retrieval", () => {
   it("uses the account-linked contact table as the verified Slack workspace identity boundary", async () => {
@@ -43,5 +46,8 @@ describe("verified identity and knowledge retrieval", () => {
     expect(document.document?.sectionIndex?.map(section => section.anchor)).toContain("turnaround");
     expect(turnaround.section.markdown).toContain("Typical turnaround is two business days");
     expect(turnaround.section.markdown).not.toContain("approved sample-handling");
+    const db = await getDb();
+    const persisted = await db!.select().from(knowledgeSections).where(eq(knowledgeSections.anchor, "turnaround")).limit(1);
+    expect(persisted[0]?.markdownContent).toContain("Typical turnaround is two business days");
   });
 });

@@ -48,7 +48,7 @@ export async function customBotIngest(req: Request, res: Response) {
   const event = normalizedBotEvent(req.body);
   if (!event) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_invalid_payload", outcome: "rejected", statusCode: 400, metadata: { transport: "custom_bot" } }); return res.status(400).json({ ok: false, error: "Expected the documented normalized custom-bot event shape." }); }
   try {
-    const result = await runTriage({ source: "custom_slack_bot", channelRef: `custom|${event.workspace_id}|${event.external_event_id}`, slackUserId: event.slack_user_id, slackWorkspaceId: event.workspace_id, rawText: event.text });
+    const result = await runTriage({ source: "custom_slack_bot", channelRef: `custom|${event.workspace_id}|${event.external_event_id}`, externalEventId: event.external_event_id, sourceSchemaVersion: "custom-bot-v0.1", threadRef: event.thread_ts ?? null, sourceReceivedAt: new Date(event.received_at), slackUserId: event.slack_user_id, slackWorkspaceId: event.workspace_id, rawText: event.text });
     await recordIntegrationAudit({ surface: "slack_ingest", eventType: `custom_bot:${event.event_type}`, outcome: "accepted", statusCode: 200, slackWorkspaceId: event.workspace_id, slackUserId: event.slack_user_id, interactionId: result.interaction.id, metadata: { transport: "custom_bot", channelType: event.channel_type, duplicate: result.duplicate, hasThread: Boolean(event.thread_ts) } });
     return res.status(200).json({ ok: true, duplicate: result.duplicate, interaction_id: result.interaction.id, lane: result.interaction.lane, acknowledgment: result.interaction.acknowledgment });
   } catch {

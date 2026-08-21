@@ -62,7 +62,9 @@ async function startServer() {
     if (source !== "slack" || typeof slackUserId !== "string" || typeof channel !== "string" || typeof timestamp !== "string" || typeof text !== "string") return res.status(400).json({ ok: false, error: "Expected a Slack message event or simplified demo-shaped body." });
     try {
       const workspaceId = typeof body.team_id === "string" ? body.team_id : typeof event.team_id === "string" ? event.team_id : demoMode && !eventIsEnvelope ? "T_DEMO" : null;
-      const result = await runTriage({ source: "slack", channelRef: `${channel}|${timestamp}`, slackUserId, slackWorkspaceId: workspaceId, rawText: text });
+      const externalEventId = typeof body.event_id === "string" ? body.event_id : typeof event.event_id === "string" ? event.event_id : `${channel}|${timestamp}`;
+      const sourceReceivedAt = typeof body.event_time === "number" ? new Date(body.event_time * 1000) : typeof event.event_time === "number" ? new Date(event.event_time * 1000) : undefined;
+      const result = await runTriage({ source: "slack", channelRef: `${channel}|${timestamp}`, externalEventId, sourceSchemaVersion: eventIsEnvelope ? "slack-events-api-v1" : "slack-demo-v1", threadRef: typeof event.thread_ts === "string" ? event.thread_ts : null, sourceReceivedAt, slackUserId, slackWorkspaceId: workspaceId, rawText: text });
       return res.json({ ok: true, duplicate: result.duplicate, interactionId: result.interaction.id, acknowledgment: result.interaction.acknowledgment, lane: result.interaction.lane, msToAck: result.interaction.msToAck });
     } catch (error) {
       console.error("ingest failed", error);

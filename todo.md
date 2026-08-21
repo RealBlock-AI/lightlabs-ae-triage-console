@@ -14,6 +14,21 @@
 - [x] Define the production Slack Events API payload contract and signing-verification requirements
 - [x] Define the MCP server tool surface, OAuth resource server model, and Slack connector configuration
 - [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
+- [ ] Reconcile the Bobby `resolve_support_request` contract with verified Light Labs identity, knowledge, and safety gates
+- [ ] Implement a constrained Bobby-compatible support-resolution MCP tool with request idempotency and privacy controls
+- [ ] Validate the Bobby tool with safe response cases and deliver finalized integration decisions
+- [x] Assess and normalize the account-to-contact relationship for verified Slack and HubSpot identity resolution
+- [x] Evaluate knowledge source, document, section, and summary tables for Markdown preservation and retrieval efficiency
+- [x] Produce a prioritized database field-type, constraint, index, and auditability improvement roadmap
+- [x] Add and backfill normalized verified contact identities from existing Slack and HubSpot mappings
+- [x] Add durable external event identifiers and source-schema metadata for interaction idempotency
+- [x] Add Markdown content metadata and first-class knowledge sections, then backfill the approved corpus
+- [x] Validate P0 migration integrity, identity resolution, event deduplication, and targeted section retrieval
+- [x] Pass native Slack event IDs, timestamps, and thread references into durable interaction correlation fields
+- [x] Prove native Slack and custom-bot idempotency by external event ID in regression coverage
+- [x] Complete and record a clean full approved-corpus Markdown and section refresh
+- [x] Add explicit custom-bot retry coverage proving external-event idempotency independently of channel reference
+- [x] Ensure retained approved source documents receive a section during refresh and validate every indexed source has at least one section
 - [x] Diagnose and correct Slackbot MCP connection registration, transport, and identity-auth behavior
 - [ ] Capture and approve signed internal Slack identities so real Slackbot callers can use the MCP tools
 - [x] Persist unapproved signed Slackbot identities and provide an administrator approval workflow

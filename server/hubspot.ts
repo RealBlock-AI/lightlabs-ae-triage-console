@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
-import { accounts, contacts, hubspotConnections, hubspotContextSnapshots, hubspotOauthSessions } from "../drizzle/schema";
+import { accounts, contactIdentities, contacts, hubspotConnections, hubspotContextSnapshots, hubspotOauthSessions } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 const REDIRECT_URI = "https://lighttriage-gdngkmys.manus.space/integrations/hubspot/callback";
@@ -165,6 +165,7 @@ export async function addPendingContactMapping(input: { accountId: string; name:
   const existing = (await db.select({ id: contacts.id }).from(contacts).where(and(eq(contacts.slackWorkspaceId, slackWorkspaceId), eq(contacts.slackUserId, slackUserId))).limit(1))[0]; if (existing) throw new Error("This Slack workspace and user are already mapped to a Light Labs contact.");
   const id = `con_${nanoid(16)}`;
   await db.insert(contacts).values({ id, accountId: input.accountId, name, email, slackUserId, slackWorkspaceId, hubspotPortalId: null, hubspotContactId: null, identityStatus: "pending", verifiedAt: null, roleTitle: null, hasPlatformLogin: 0 });
+  await db.insert(contactIdentities).values({ id: `ci_slack_${id}`, contactId: id, provider: "slack", tenantId: slackWorkspaceId, externalId: slackUserId, emailNormalized: email, verificationStatus: "pending", verificationMethod: "admin_confirmed", verifiedAt: null, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: now(), updatedAt: now() });
   return { id, identityStatus: "pending" as const };
 }
 
@@ -188,7 +189,10 @@ export async function verifyAndMapContact(input: { contactId: string; hubspotCon
   const candidates = await searchHubSpotContactsByEmail(contact.email); const candidate = candidates.find(item => item.id === input.hubspotContactId);
   if (!candidate) throw new Error("The selected HubSpot contact does not exactly match the Light Labs contact email.");
   const connection = await getHubSpotConnectionStatus();
-  await db.update(contacts).set({ hubspotContactId: candidate.id, hubspotPortalId: connection.portalId ?? "connected_mcp", identityStatus: "verified", verifiedAt: now() }).where(eq(contacts.id, contact.id));
+  const verifiedAt = now(); const portalId = connection.portalId ?? "connected_mcp";
+  await db.update(contacts).set({ hubspotContactId: candidate.id, hubspotPortalId: portalId, identityStatus: "verified", verifiedAt }).where(eq(contacts.id, contact.id));
+  if (contact.slackWorkspaceId && contact.slackUserId) await db.insert(contactIdentities).values({ id: `ci_slack_${contact.id}`, contactId: contact.id, provider: "slack", tenantId: contact.slackWorkspaceId, externalId: contact.slackUserId, emailNormalized: contact.email.toLowerCase(), verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: verifiedAt, updatedAt: verifiedAt }).onDuplicateKeyUpdate({ set: { verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, emailNormalized: contact.email.toLowerCase(), updatedAt: verifiedAt } });
+  await db.insert(contactIdentities).values({ id: `ci_hubspot_${contact.id}`, contactId: contact.id, provider: "hubspot", tenantId: portalId, externalId: candidate.id, emailNormalized: contact.email.toLowerCase(), verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: verifiedAt, updatedAt: verifiedAt }).onDuplicateKeyUpdate({ set: { verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, emailNormalized: contact.email.toLowerCase(), updatedAt: verifiedAt } });
   return { id: contact.id, hubspotContactId: candidate.id, email: candidate.email, verified: true as const };
 }
 

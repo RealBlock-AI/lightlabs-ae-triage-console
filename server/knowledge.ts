@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
-import { knowledgeDocuments, knowledgeRetrievalEvents, knowledgeSources } from "../drizzle/schema";
+import { knowledgeDocuments, knowledgeRetrievalEvents, knowledgeSections, knowledgeSources } from "../drizzle/schema";
 
 type SourceType = "insight" | "test_menu" | "compliance";
 type AnswerSafety = "general_knowledge" | "review_required";
@@ -49,9 +49,14 @@ export async function indexKnowledgeDocument(input: { sourceId: string; content:
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const source = (await db.select().from(knowledgeSources).where(eq(knowledgeSources.id, input.sourceId)).limit(1))[0]; if (!source) throw new Error("Knowledge source is not in the approved catalog.");
   const content = input.content.trim(); if (content.length < 80) throw new Error("Knowledge document is too short to index safely.");
-  const hash = createHash("sha256").update(content).digest("hex"); const capturedAt = input.fetchedAt ?? now(); const sections = sectionIndexFor(content); const summaryYaml = summaryFor(source, content);
+  const hash = createHash("sha256").update(content).digest("hex"); const capturedAt = input.fetchedAt ?? now(); const discoveredSections = sectionIndexFor(content); const candidateSections = discoveredSections.length ? discoveredSections : [{ heading: "Overview", anchor: "overview", excerpt: content.replace(/\s+/g, " ").slice(0, 500) }]; const anchorCounts = new Map<string, number>(); const sections = candidateSections.map(section => { const baseAnchor = section.anchor || "overview"; const count = (anchorCounts.get(baseAnchor) ?? 0) + 1; anchorCounts.set(baseAnchor, count); return { ...section, anchor: count === 1 ? baseAnchor : `${baseAnchor}-${count}` }; }); const summaryYaml = summaryFor(source, content);
   await db.update(knowledgeDocuments).set({ status: "superseded" }).where(and(eq(knowledgeDocuments.sourceId, source.id), eq(knowledgeDocuments.status, "indexed")));
-  await db.insert(knowledgeDocuments).values({ id: `kd_${nanoid(18)}`, sourceId: source.id, content, summaryYaml, sectionIndex: sections, contentHash: hash, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" }).onDuplicateKeyUpdate({ set: { content, summaryYaml, sectionIndex: sections, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" } });
+  await db.insert(knowledgeDocuments).values({ id: `kd_${nanoid(18)}`, sourceId: source.id, content, markdownContent: content, contentFormat: "markdown", parserVersion: "main-content-markdown-v1", summaryYaml, sectionIndex: sections, contentHash: hash, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" }).onDuplicateKeyUpdate({ set: { content, markdownContent: content, contentFormat: "markdown", parserVersion: "main-content-markdown-v1", summaryYaml, sectionIndex: sections, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" } });
+  const document = (await db.select({ id: knowledgeDocuments.id }).from(knowledgeDocuments).where(and(eq(knowledgeDocuments.sourceId, source.id), eq(knowledgeDocuments.contentHash, hash))).limit(1))[0];
+  if (document) {
+    await db.delete(knowledgeSections).where(eq(knowledgeSections.documentId, document.id));
+    if (sections.length) await db.insert(knowledgeSections).values(sections.map((section, ordinal) => ({ id: `ks_${nanoid(18)}`, documentId: document.id, ordinal, headingPath: section.heading, anchor: section.anchor || `section-${ordinal + 1}`, markdownContent: (() => { const lines = content.split("\n"); const start = lines.findIndex(line => line.replace(/^#{1,3}\s+/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") === section.anchor); const end = lines.findIndex((line, index) => index > start && /^#{1,3}\s+/.test(line)); return (start >= 0 ? lines.slice(start, end > start ? end : undefined).join("\n") : section.excerpt).trim(); })(), excerpt: section.excerpt, tokenCount: Math.ceil(section.excerpt.split(/\s+/).filter(Boolean).length * 1.35), contentHash: createHash("sha256").update(`${hash}:${section.anchor}`).digest("hex"), answerSafety: source.answerSafety === "review_required" ? "review_required" as const : "general_knowledge" as const, effectiveFrom: capturedAt, effectiveTo: null })));
+  }
   await db.update(knowledgeSources).set({ lastFetchedAt: capturedAt, updatedAt: now() }).where(eq(knowledgeSources.id, source.id));
 }
 
@@ -68,14 +73,26 @@ export async function getKnowledgeDocument(sourceId: string) {
   await ensureKnowledgeCatalog(); const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const row = (await db.select({ source: knowledgeSources, document: knowledgeDocuments }).from(knowledgeSources).leftJoin(knowledgeDocuments, and(eq(knowledgeDocuments.sourceId, knowledgeSources.id), eq(knowledgeDocuments.status, "indexed"))).where(eq(knowledgeSources.id, sourceId)).orderBy(desc(knowledgeDocuments.indexedAt)).limit(1))[0];
   if (!row?.source) throw new Error("Knowledge source not found.");
-  return { source: row.source, document: row.document ? { id: row.document.id, markdown: row.document.content, summaryYaml: row.document.summaryYaml, sectionIndex: row.document.sectionIndex, fetchedAt: row.document.fetchedAt } : null };
+  return { source: row.source, document: row.document ? { id: row.document.id, markdown: row.document.markdownContent ?? row.document.content, summaryYaml: row.document.summaryYaml, sectionIndex: row.document.sectionIndex, fetchedAt: row.document.fetchedAt } : null };
 }
 
 export async function getKnowledgeSection(sourceId: string, anchor: string) {
   const detail = await getKnowledgeDocument(sourceId); if (!detail.document) throw new Error("This approved source has not been indexed yet.");
-  const section = (detail.document.sectionIndex ?? []).find(item => item.anchor === anchor); if (!section) throw new Error("The requested section does not exist in this knowledge source.");
-  const lines = detail.document.markdown.split("\n"); const start = lines.findIndex(line => line.replace(/^#{1,3}\s+/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") === anchor); const body = start >= 0 ? lines.slice(start, lines.findIndex((line, index) => index > start && /^#{1,3}\s+/.test(line)) > start ? lines.findIndex((line, index) => index > start && /^#{1,3}\s+/.test(line)) : undefined).join("\n").trim() : section.excerpt;
-  return { source: { title: detail.source.title, url: detail.source.canonicalUrl, answerSafety: detail.source.answerSafety }, section: { ...section, markdown: body } };
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const section = (await db.select().from(knowledgeSections).where(and(eq(knowledgeSections.documentId, detail.document.id), eq(knowledgeSections.anchor, anchor))).limit(1))[0];
+  if (!section) throw new Error("The requested section does not exist in this knowledge source.");
+  return { source: { title: detail.source.title, url: detail.source.canonicalUrl, answerSafety: detail.source.answerSafety }, section: { heading: section.headingPath, anchor: section.anchor, excerpt: section.excerpt, markdown: section.markdownContent, tokenCount: section.tokenCount } };
+}
+
+export async function ensureKnowledgeDocumentSections(sourceId: string) {
+  const detail = await getKnowledgeDocument(sourceId); if (!detail.document) throw new Error("This approved source has not been indexed yet.");
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const existing = await db.select({ id: knowledgeSections.id }).from(knowledgeSections).where(eq(knowledgeSections.documentId, detail.document.id)).limit(1);
+  if (existing.length) return { sourceId, sectionCount: existing.length, status: "present" as const };
+  await indexKnowledgeDocument({ sourceId, content: detail.document.markdown, fetchedAt: detail.document.fetchedAt });
+  const refreshed = await getKnowledgeDocument(sourceId); const sectionCount = refreshed.document?.sectionIndex?.length ?? 0;
+  if (!sectionCount) throw new Error("Indexed knowledge document has no targetable section.");
+  return { sourceId, sectionCount, status: "backfilled" as const };
 }
 
 function relevance(query: string, title: string, content: string) {

@@ -49,6 +49,17 @@ describe("permanent AE triage safety contract", () => {
     expect(first.interaction.laneReasons.join(" ")).toMatch(/could not be resolved/i);
   });
 
+  it("deduplicates by durable external event ID even if a native Slack retry arrives with a different channel reference", async () => {
+    const externalEventId = `Ev_P0_${Date.now()}`;
+    const first = await runTriage({ source: "slack", channelRef: `C_P0_${externalEventId}|1710000000.000001`, externalEventId, sourceSchemaVersion: "slack-events-api-v1", threadRef: "1710000000.000000", sourceReceivedAt: new Date(), slackUserId: "U_UNKNOWN", slackWorkspaceId: "T_P0", rawText: "Can you tell me the order status?" });
+    const retry = await runTriage({ source: "slack", channelRef: `C_P0_RETRY_${externalEventId}|1710000000.000002`, externalEventId, sourceSchemaVersion: "slack-events-api-v1", threadRef: "1710000000.000000", sourceReceivedAt: new Date(), slackUserId: "U_UNKNOWN", slackWorkspaceId: "T_P0", rawText: "Can you tell me the order status?" });
+    expect(first.duplicate).toBe(false);
+    expect(first.interaction.externalEventId).toBe(externalEventId);
+    expect(first.interaction.sourceSchemaVersion).toBe("slack-events-api-v1");
+    expect(retry.duplicate).toBe(true);
+    expect(retry.interaction.id).toBe(first.interaction.id);
+  });
+
   it("keeps the in-flight Appendix A order future-dated so the permanent demo cannot rot", async () => {
     await ensureDemoData();
     const db = await getDb();

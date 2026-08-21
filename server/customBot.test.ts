@@ -21,9 +21,10 @@ describe("custom-bot ingestion", () => {
     const event = { source: "custom_slack_bot", external_event_id: eventId, workspace_id: "T_CUSTOM_TEST", channel_id: "C_CUSTOM_TEST", channel_type: "channel", slack_user_id: "U_CUSTOM_TEST", message_ts: "1780000000.000001", text: "Please confirm the current order status.", event_type: "app_mention", received_at: new Date().toISOString() };
     const rejected = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: "Bearer invalid" }, body: JSON.stringify(event) });
     const first = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify(event) });
-    const retry = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify(event) });
+    const retry = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify({ ...event, channel_id: "C_CUSTOM_TEST_RETRY", message_ts: "1780000000.000002" }) });
     expect(rejected.status).toBe(401);
-    expect(await first.json()).toMatchObject({ ok: true, duplicate: false, lane: "escalate" });
-    expect(await retry.json()).toMatchObject({ ok: true, duplicate: true });
+    const firstPayload = await first.json(); const retryPayload = await retry.json();
+    expect(firstPayload).toMatchObject({ ok: true, duplicate: false, lane: "escalate" });
+    expect(retryPayload).toMatchObject({ ok: true, duplicate: true, interaction_id: firstPayload.interaction_id });
   }, 15_000);
 });
