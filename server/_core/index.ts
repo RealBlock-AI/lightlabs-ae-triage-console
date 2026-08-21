@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { runTriage } from "../triage";
 import { retrieveKnowledge } from "../knowledge";
+import { completeHubSpotAuthorization } from "../hubspot";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -68,6 +69,20 @@ async function startServer() {
       return res.json({ sources: result.sources });
     } catch (error) {
       return res.status(400).json({ sources: [], error: error instanceof Error ? error.message : "Knowledge retrieval failed." });
+    }
+  });
+  app.get("/integrations/hubspot/callback", async (req, res) => {
+    if (typeof req.query.error === "string") {
+      return res.status(400).send("HubSpot authorization was not completed. Return to the Light Labs integration setup after resolving the HubSpot error.");
+    }
+    if (typeof req.query.code !== "string" || typeof req.query.state !== "string") {
+      return res.status(400).send("Missing HubSpot authorization code. This callback is reserved for the Light Labs HubSpot MCP connection.");
+    }
+    try {
+      await completeHubSpotAuthorization({ code: req.query.code, state: req.query.state });
+      return res.status(200).send("HubSpot MCP connection established. You may close this window and return to Light Labs.");
+    } catch (error) {
+      return res.status(400).send(error instanceof Error ? `HubSpot authorization failed: ${error.message}` : "HubSpot authorization failed.");
     }
   });
   registerStorageProxy(app);

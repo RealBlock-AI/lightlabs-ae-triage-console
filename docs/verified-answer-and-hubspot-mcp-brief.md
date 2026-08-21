@@ -51,6 +51,14 @@ The web application’s runtime must call HubSpot MCP as an **MCP client**. Slac
 
 Create a HubSpot **MCP Auth App** in HubSpot and connect the Light Labs backend to the remote HubSpot MCP server at `https://mcp.hubspot.com`. HubSpot requires OAuth 2.1 with PKCE and refresh-token rotation. [3] The authorization must be performed by a dedicated Light Labs HubSpot integration user with least-privilege, read-only access to only the CRM objects needed for customer support triage; do not authorize with a personal administrator account.
 
+Register this exact redirect URL in the HubSpot MCP Auth App:
+
+```text
+https://lighttriage-gdngkmys.manus.space/integrations/hubspot/callback
+```
+
+The published callback route is reserved now. Do not start the HubSpot OAuth authorization until the HubSpot MCP Auth App client ID and client secret have been added to the project, because the application cannot safely exchange or retain a returned authorization code without them.
+
 The production application will persist the encrypted refresh-token record server-side, keyed to the HubSpot portal and the integration identity. The Manus task-level HubSpot connector is useful for development or an agent session, but it is **not available to the deployed web application at runtime** and cannot be the production dependency.
 
 | HubSpot MCP tool | Triage use | Normalized result retained by Light Labs |

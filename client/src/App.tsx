@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Interaction from "./pages/Interaction";
 import Capacity from "./pages/Capacity";
+import HubSpot from "./pages/HubSpot";
 import DashboardLayout from "./components/DashboardLayout";
 
 function Router() {
@@ -16,6 +17,7 @@ function Router() {
         <Route path={"/"} component={Home} />
         <Route path={"/interactions/:id"} component={Interaction} />
         <Route path={"/capacity"} component={Capacity} />
+        <Route path={"/integrations/hubspot"} component={HubSpot} />
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>

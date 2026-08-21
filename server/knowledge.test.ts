@@ -12,6 +12,13 @@ describe("verified identity and knowledge retrieval", () => {
     expect(incorrectWorkspace.interaction.lane).toBe("escalate");
   });
 
+  it("keeps live classifications in the human queue unless deterministic identity, evidence, entity, and template gates all pass", async () => {
+    const live = await runTriage({ source: "slack", channelRef: `verified-reply|live|${Date.now()}`, slackUserId: "U_NORTH_OPS", slackWorkspaceId: "T_DEMO", rawText: "Any update on my order?", injected: undefined });
+    expect(live.interaction.verifiedReplyStatus).toBe("ineligible");
+    expect(live.interaction.sendAllowed).toBe(0);
+    expect(live.interaction.replyGateReasons).toContain("No deterministic entity-resolution record is available for this live interaction.");
+  });
+
   it("returns source-attributed relevance scores, never discovery confidence, and keeps the answer gate closed without support", async () => {
     await ensureKnowledgeCatalog();
     const sources = await listKnowledgeSources();

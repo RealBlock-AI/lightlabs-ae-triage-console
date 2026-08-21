@@ -29,6 +29,20 @@
       "when": 1787269099136,
       "tag": "0003_chief_snowbird",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787273661971,
+      "tag": "0004_organic_scarecrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787273783691,
+      "tag": "0005_orange_wong",
+      "breakpoints": true
     }
   ]
 }

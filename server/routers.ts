@@ -2,12 +2,15 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { APPENDIX_A, capacity, ensureDemoData, getItemForViewer, getQueue, recordSend, requestClarification, resolveItem, runFixture } from "./triage";
 import { listKnowledgeSources, refreshKnowledgeSource, retrieveKnowledge } from "./knowledge";
+import { beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus } from "./hubspot";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => { if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Administrator access is required." }); return next(); });
 
 export const appRouter = router({
   system: systemRouter,
@@ -33,6 +36,11 @@ export const appRouter = router({
     sources: publicProcedure.query(() => listKnowledgeSources()),
     search: publicProcedure.input(z.object({ query: z.string().min(3).max(2000), interactionId: z.string().optional(), limit: z.number().int().min(1).max(5).optional() })).query(({ input }) => retrieveKnowledge(input)),
     refreshSource: publicProcedure.input(z.object({ sourceId: z.string().min(1), viewerId: z.literal("usr_admin") })).mutation(({ input }) => refreshKnowledgeSource(input.sourceId)),
+  }),
+  hubspot: router({
+    status: adminProcedure.query(() => getHubSpotConnectionStatus()),
+    beginAuthorization: adminProcedure.mutation(({ ctx }) => beginHubSpotAuthorization(String(ctx.user.id))),
+    completeManualAuthorization: adminProcedure.input(z.object({ callbackUrl: z.string().url().max(4000) })).mutation(({ input }) => completeHubSpotCallbackUrl(input.callbackUrl)),
   }),
 });
 
