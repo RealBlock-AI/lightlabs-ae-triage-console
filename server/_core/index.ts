@@ -15,6 +15,7 @@ import { teamMembers } from "../../drizzle/schema";
 import { getItemForViewer, getQueue, runTriage } from "../triage";
 import { getKnowledgeSection, retrieveKnowledge } from "../knowledge";
 import { completeHubSpotAuthorization } from "../hubspot";
+import { capturePendingMcpIdentity } from "../mcpIdentity";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -90,10 +91,10 @@ async function startServer() {
       { name: "triage.search_queue", description: "List only the signed caller's assigned triage queue.", inputSchema: { type: "object", additionalProperties: false, properties: { lane: { type: "string", enum: ["auto", "assisted", "escalate"] } } } },
       { name: "triage.get_interaction", description: "Get a decision packet only when the signed caller owns the interaction.", inputSchema: { type: "object", additionalProperties: false, required: ["interaction_id"], properties: { interaction_id: { type: "string" } } } },
     ] });
-    const slackMeta = body.params?._meta as { slack?: { user_id?: string; team_id?: string; userId?: string; teamId?: string } } | undefined;
+    const slackMeta = body.params?._meta as { slack?: { user_id?: string; team_id?: string; enterprise_id?: string | null; userId?: string; teamId?: string } } | undefined;
     const slackUserId = slackMeta?.slack?.user_id ?? slackMeta?.slack?.userId; const slackWorkspaceId = slackMeta?.slack?.team_id ?? slackMeta?.slack?.teamId;
     const db = await getDb(); const member = db && slackUserId && slackWorkspaceId ? (await db.select().from(teamMembers).where(and(eq(teamMembers.slackUserId, slackUserId), eq(teamMembers.slackWorkspaceId, slackWorkspaceId))).limit(1))[0] : undefined;
-    if (!member) return res.status(403).json({ jsonrpc: "2.0", id, error: { code: -32003, message: "No authorized Light Labs team member matches this signed Slack identity." } });
+    if (!member) { if (slackUserId && slackWorkspaceId) await capturePendingMcpIdentity({ slackUserId, slackWorkspaceId, enterpriseId: slackMeta?.slack?.enterprise_id }); return res.status(403).json({ jsonrpc: "2.0", id, error: { code: -32003, message: "This signed Slack identity is not approved for Light Labs data. An administrator can approve the pending request in Slack Connections." } }); }
     if (body.method !== "tools/call") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported MCP method." } });
     const tool = body.params?.name; const args = (body.params?.arguments ?? {}) as Record<string, unknown>;
     try {

@@ -16,6 +16,8 @@
 - [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
 - [x] Diagnose and correct Slackbot MCP connection registration, transport, and identity-auth behavior
 - [ ] Capture and approve signed internal Slack identities so real Slackbot callers can use the MCP tools
+- [x] Persist unapproved signed Slackbot identities and provide an administrator approval workflow
+- [ ] Validate signed Slackbot onboarding with a real captured identity and approved tool access
 - [x] Preserve source documents as readable Markdown and add concise structured summaries for retrieval planning
 - [x] Add a knowledge-detail experience that lets AEs and tools inspect cited sections without loading full documents
 - [x] Define a deterministic verified-answer policy: answer only when every required fact is current, cited, authorized, and complete; otherwise queue

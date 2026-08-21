@@ -11,6 +11,9 @@ export const users = mysqlTable("users", {
 export const teamMembers = mysqlTable("team_members", {
   id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 160 }).notNull(), email: varchar("email", { length: 255 }).notNull(), role: mysqlEnum("role", ["ae", "lab_director", "admin"]).notNull(), slackUserId: varchar("slack_user_id", { length: 100 }), slackWorkspaceId: varchar("slack_workspace_id", { length: 64 }),
 }, table => [uniqueIndex("team_members_slack_identity_unique").on(table.slackWorkspaceId, table.slackUserId)]);
+export const slackMcpIdentityRequests = mysqlTable("slack_mcp_identity_requests", {
+  id: varchar("id", { length: 96 }).primaryKey(), slackWorkspaceId: varchar("slack_workspace_id", { length: 64 }).notNull(), slackUserId: varchar("slack_user_id", { length: 100 }).notNull(), enterpriseId: varchar("enterprise_id", { length: 64 }), status: mysqlEnum("status", ["pending", "approved", "rejected"]).notNull().default("pending"), firstSeenAt: datetime("first_seen_at").notNull(), lastSeenAt: datetime("last_seen_at").notNull(), approvedTeamMemberId: varchar("approved_team_member_id", { length: 64 }), approvedAt: datetime("approved_at"),
+}, table => [uniqueIndex("slack_mcp_identity_request_unique").on(table.slackWorkspaceId, table.slackUserId), index("slack_mcp_identity_request_status_idx").on(table.status, table.lastSeenAt)]);
 export const accounts = mysqlTable("accounts", {
   id: varchar("id", { length: 64 }).primaryKey(), name: varchar("name", { length: 200 }).notNull(), accountType: mysqlEnum("account_type", ["brand", "coman"]).notNull(), annualSpend: int("annual_spend").notNull(), slackChannel: varchar("slack_channel", { length: 100 }), ownerId: varchar("owner_id", { length: 64 }).notNull(),
 });

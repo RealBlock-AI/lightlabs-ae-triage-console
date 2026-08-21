@@ -7,6 +7,7 @@ import { TRPCError } from "@trpc/server";
 import { APPENDIX_A, capacity, ensureDemoData, getItemForViewer, getQueue, recordSend, requestClarification, resolveItem, runFixture } from "./triage";
 import { getKnowledgeDocument, getKnowledgeSection, listKnowledgeSources, refreshKnowledgeSource, retrieveKnowledge } from "./knowledge";
 import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listAccountsForContactMapping, listContactMappings, refreshHubSpotContactContext, searchHubSpotContactsByEmail, verifyAndMapContact, verifyHubSpotMcpConnection } from "./hubspot";
+import { approveMcpIdentityRequest, listInternalTeamMembers, listMcpIdentityRequests } from "./mcpIdentity";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -50,6 +51,11 @@ export const appRouter = router({
     addPendingContact: adminProcedure.input(z.object({ accountId: z.string().min(1), name: z.string().min(2).max(160), email: z.string().email(), slackWorkspaceId: z.string().min(1).max(64), slackUserId: z.string().min(1).max(100) })).mutation(({ input }) => addPendingContactMapping(input)),
     searchContactsByEmail: adminProcedure.input(z.object({ email: z.string().email() })).mutation(({ input }) => searchHubSpotContactsByEmail(input.email)),
     verifyAndMapContact: adminProcedure.input(z.object({ contactId: z.string().min(1), hubspotContactId: z.string().regex(/^\d+$/) })).mutation(({ input }) => verifyAndMapContact(input)),
+  }),
+  mcpAccess: router({
+    pendingIdentities: adminProcedure.query(() => listMcpIdentityRequests()),
+    teamMembers: adminProcedure.query(() => listInternalTeamMembers()),
+    approveIdentity: adminProcedure.input(z.object({ requestId: z.string().min(1), teamMemberId: z.string().min(1) })).mutation(({ input }) => approveMcpIdentityRequest(input)),
   }),
 });
 
