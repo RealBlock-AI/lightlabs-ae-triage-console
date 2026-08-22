@@ -2,10 +2,11 @@ import express from "express";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { bobbySupportRequests, hubspotContextSnapshots } from "../drizzle/schema";
+import { bobbySupportRequests, externalSlackIdentityCandidates, hubspotContextSnapshots } from "../drizzle/schema";
 import { getDb } from "./db";
 import { bobbyHealth, bobbyMcp } from "./bobby";
 import { ensureDemoData } from "./triage";
+import { ensureKnowledgeCatalog, indexKnowledgeDocument } from "./knowledge";
 
 describe("Bobby support-resolution MCP", () => {
   let server: ReturnType<typeof createServer>; let baseUrl = "";
@@ -21,9 +22,9 @@ describe("Bobby support-resolution MCP", () => {
     expect(healthRejected.status).toBe(401); expect(healthRejected.headers.get("www-authenticate")).toBe('Bearer realm="light-labs-bobby"');
     expect(initialized.status).toBe(202); expect(await initialized.text()).toBe("");
   });
-  it("lists the single safe tool and returns one idempotent no-match response for an unmapped customer", async () => {
+  it("lists the safe tools and returns one idempotent no-match response for an unmapped customer", async () => {
     const toolList = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
-    expect(await toolList.json()).toMatchObject({ result: { tools: [expect.objectContaining({ name: "resolve_support_request" })] } });
+    expect(await toolList.json()).toMatchObject({ result: { tools: [expect.objectContaining({ name: "resolve_support_request" }), expect.objectContaining({ name: "search_knowledge" }), expect.objectContaining({ name: "get_contact_by_slack_user" })] } });
     const request = { request_id: requestId, schema_version: "0.1", requested_at: new Date().toISOString(), customer: { slack_user_id: "U_BOBBY_UNKNOWN", slack_team_id: "T_BOBBY_UNKNOWN", is_external: true }, conversation: { channel_id: "D_BOBBY", channel_type: "im", thread_ts: "1710000000.000001", messages: [{ ts: "1710000000.000001", user_id: "U_BOBBY_UNKNOWN", role: "customer", text: "Can you confirm my testing order status?", files: [{ name: "error.png", mimetype: "image/png", url_private: "must-not-persist" }] } ] }, analysis: { question: "order status", urgency: "normal" } };
     const first = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "resolve_support_request", arguments: request } }) });
     const retry = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "resolve_support_request", arguments: request } }) });
@@ -33,6 +34,23 @@ describe("Bobby support-resolution MCP", () => {
     expect(retryResult).toEqual(firstResult);
     const db = await getDb(); const persisted = await db!.select().from(bobbySupportRequests).where(eq(bobbySupportRequests.requestId, requestId));
     expect(persisted).toHaveLength(1); expect(JSON.stringify(persisted[0]?.response)).not.toContain("must-not-persist");
+  });
+
+  it("returns attributed numeric retrieval relevance without treating it as permission to answer", async () => {
+    await ensureKnowledgeCatalog(); await indexKnowledgeDocument({ sourceId: "k_test_microbial", content: "# Microbial testing\n\nLight Labs supports microbial testing for finished products. Testing panels and scope must be confirmed with the accountable lab team." });
+    const response = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: "knowledge", method: "tools/call", params: { name: "search_knowledge", arguments: { query: "microbial testing panels" } } }) });
+    const result = JSON.parse((await response.json()).result.content[0].text);
+    expect(result.sources[0]).toMatchObject({ title: expect.any(String), url: expect.any(String), snippet: expect.any(String), score: expect.any(Number) });
+    expect(result.sources[0].score).toBeGreaterThanOrEqual(0); expect(result.sources[0].score).toBeLessThanOrEqual(1); expect(result.gate).toHaveProperty("status");
+  });
+
+  it("returns pending_candidate rather than an identity error for a first-contact external sender", async () => {
+    const workspaceId = `T_PENDING_${Date.now()}`; const slackUserId = "U_PENDING"; const db = await getDb(); await db!.insert(externalSlackIdentityCandidates).values({ id: `esc_test_${Date.now()}`, slackWorkspaceId: workspaceId, slackUserId, status: "pending", firstSeenAt: new Date(), lastSeenAt: new Date(), lastChannelId: "D_PENDING", lastChannelType: "im", externallySharedChannel: 0, sourceTransport: "custom_bridge", lastInteractionId: null, resolvedContactId: null, resolvedAt: null, resolvedByUserId: null });
+    const response = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: "pending", method: "tools/call", params: { name: "get_contact_by_slack_user", arguments: { slack_team_id: workspaceId, slack_user_id: slackUserId } } }) });
+    const result = JSON.parse((await response.json()).result.content[0].text);
+    expect(result).toMatchObject({ status: "pending_candidate", workspace_id: workspaceId, slack_user_id: slackUserId, candidate: { last_channel_id: "D_PENDING" } });
+    expect(result).not.toHaveProperty("email");
+    await db!.delete(externalSlackIdentityCandidates).where(eq(externalSlackIdentityCandidates.slackWorkspaceId, workspaceId));
   });
 
   it("escalates a verified mapped sender when fresh CRM context is unavailable", async () => {

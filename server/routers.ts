@@ -10,6 +10,7 @@ import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCal
 import { approveMcpIdentityRequest, listInternalTeamMembers, listMcpIdentityRequests } from "./mcpIdentity";
 import { listIntegrationAudit } from "./integrationAudit";
 import { listIngestPolicies, setIngestPolicy } from "./ingestPolicy";
+import { listExternalSlackIdentityCandidates } from "./externalIdentity";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -52,7 +53,8 @@ export const appRouter = router({
     mappingAccounts: adminProcedure.query(() => listAccountsForContactMapping()),
     addPendingContact: adminProcedure.input(z.object({ accountId: z.string().min(1), name: z.string().min(2).max(160), email: z.string().email(), slackWorkspaceId: z.string().min(1).max(64), slackUserId: z.string().min(1).max(100) })).mutation(({ input }) => addPendingContactMapping(input)),
     searchContactsByEmail: adminProcedure.input(z.object({ email: z.string().email() })).mutation(({ input }) => searchHubSpotContactsByEmail(input.email)),
-    verifyAndMapContact: adminProcedure.input(z.object({ contactId: z.string().min(1), hubspotContactId: z.string().regex(/^\d+$/) })).mutation(({ input }) => verifyAndMapContact(input)),
+    verifyAndMapContact: adminProcedure.input(z.object({ contactId: z.string().min(1), hubspotContactId: z.string().regex(/^\d+$/) })).mutation(({ input, ctx }) => verifyAndMapContact({ ...input, verifiedByUserId: String(ctx.user.id) })),
+    externalSlackCandidates: adminProcedure.query(() => listExternalSlackIdentityCandidates()),
   }),
   mcpAccess: router({
     pendingIdentities: adminProcedure.query(() => listMcpIdentityRequests()),

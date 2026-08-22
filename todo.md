@@ -90,3 +90,10 @@
 - [x] Integrate verified mapping outcomes into the live Slack triage and Slackbot data-access boundaries
 - [x] Refresh and persist a HubSpot context snapshot immediately after an exact-email contact mapping
 - [x] Prove a fresh mapped HubSpot context is recognized by live Slack triage while absent or stale context is force-escalated
+- [ ] Configure and validate the bridge-only Bobby customer-ingest path with securely provisioned bearer credentials
+- [x] Preserve Socket Mode externality metadata and stable `externalEventId` fallback semantics at the custom bridge boundary
+- [x] Add Bobby MCP `search_knowledge` with attributed numeric retrieval relevance and existing answer-gate reasons
+- [x] Add Bobby MCP `get_contact_by_slack_user` with verified, pending-candidate, unmapped, and revoked identity states
+- [x] Persist first-contact external Slack identity candidates without inferring name or email
+- [x] Build administrator delivery visibility and a separate unmapped-customer mapping workflow
+- [ ] Validate bridge DM/channel delivery, idempotency, candidate handling, knowledge retrieval, and no-answer safety gates

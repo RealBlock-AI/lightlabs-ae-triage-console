@@ -3,7 +3,9 @@ import { timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gt } from "drizzle-orm";
 import { bobbySupportRequests, contactIdentities, contacts, hubspotContextSnapshots } from "../drizzle/schema";
 import { getDb } from "./db";
+import { getContactBySlackUser } from "./externalIdentity";
 import { recordIntegrationAudit } from "./integrationAudit";
+import { retrieveKnowledge } from "./knowledge";
 import { runTriage } from "./triage";
 
 function secretMatches(provided: string | undefined) {
@@ -71,10 +73,32 @@ export async function bobbyMcp(req: Request, res: Response) {
         additionalProperties: true,
         required: ["request_id", "schema_version", "requested_at", "customer", "conversation"],
       },
+    }, {
+      name: "search_knowledge",
+      description: "Retrieve attributed Light Labs knowledge sources with deterministic relevance scores and answer-gate reasons. Scores are retrieval relevance, not model confidence.",
+      inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string", minLength: 3 }, interaction_id: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 5 } }, required: ["query"] },
+    }, {
+      name: "get_contact_by_slack_user",
+      description: "Return safe verified, pending-candidate, unmapped, or revoked identity state for a Slack workspace and user. Never infer customer email.",
+      inputSchema: { type: "object", additionalProperties: false, properties: { slack_team_id: { type: "string", minLength: 1 }, slack_user_id: { type: "string", minLength: 1 } }, required: ["slack_team_id", "slack_user_id"] },
     }],
   });
-  if (body.method !== "tools/call" || body.params?.name !== "resolve_support_request") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported Bobby MCP method or tool." } });
-  const request = parsedRequest(body.params.arguments); if (!request) return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32602, message: "Invalid support request; send the documented minimal contract with no private file URLs or callback URL." } });
+  if (body.method !== "tools/call") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported Bobby MCP method or tool." } });
+  const params = body.params ?? {}; const toolArgs = params.arguments as Record<string, unknown> | undefined;
+  if (params.name === "search_knowledge") {
+    if (typeof toolArgs?.query !== "string" || toolArgs.query.trim().length < 3) return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32602, message: "search_knowledge requires a query of at least three characters." } });
+    const startedAt = Date.now();
+    try { const result = await retrieveKnowledge({ query: toolArgs.query, interactionId: typeof toolArgs.interaction_id === "string" ? toolArgs.interaction_id : undefined, limit: typeof toolArgs.limit === "number" ? toolArgs.limit : undefined }); await recordIntegrationAudit({ surface: "bobby", eventType: "search_knowledge", outcome: "accepted", statusCode: 200, method: "tools/call", toolName: "search_knowledge", interactionId: typeof toolArgs.interaction_id === "string" ? toolArgs.interaction_id : null, metadata: { sourceCount: result.sources.length, topScore: result.sources[0]?.score ?? 0, gate: result.gate.status, durationMs: Date.now() - startedAt } }); return respond({ content: [{ type: "text", text: JSON.stringify(result) }] }); }
+    catch { await recordIntegrationAudit({ surface: "bobby", eventType: "search_knowledge", outcome: "error", statusCode: 500, method: "tools/call", toolName: "search_knowledge", metadata: { durationMs: Date.now() - startedAt } }); return res.status(500).json({ jsonrpc: "2.0", id, error: { code: -32603, message: "Light Labs could not retrieve knowledge safely." } }); }
+  }
+  if (params.name === "get_contact_by_slack_user") {
+    if (typeof toolArgs?.slack_team_id !== "string" || typeof toolArgs.slack_user_id !== "string" || !toolArgs.slack_team_id.trim() || !toolArgs.slack_user_id.trim()) return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32602, message: "get_contact_by_slack_user requires slack_team_id and slack_user_id." } });
+    const startedAt = Date.now();
+    try { const result = await getContactBySlackUser({ workspaceId: toolArgs.slack_team_id, slackUserId: toolArgs.slack_user_id }); await recordIntegrationAudit({ surface: "bobby", eventType: "get_contact_by_slack_user", outcome: "accepted", statusCode: 200, slackWorkspaceId: toolArgs.slack_team_id, slackUserId: toolArgs.slack_user_id, method: "tools/call", toolName: "get_contact_by_slack_user", metadata: { status: result.status, durationMs: Date.now() - startedAt } }); return respond({ content: [{ type: "text", text: JSON.stringify(result) }] }); }
+    catch { await recordIntegrationAudit({ surface: "bobby", eventType: "get_contact_by_slack_user", outcome: "error", statusCode: 500, method: "tools/call", toolName: "get_contact_by_slack_user", metadata: { durationMs: Date.now() - startedAt } }); return res.status(500).json({ jsonrpc: "2.0", id, error: { code: -32603, message: "Light Labs could not resolve the Slack identity safely." } }); }
+  }
+  if (params.name !== "resolve_support_request") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported Bobby MCP method or tool." } });
+  const request = parsedRequest(params.arguments); if (!request) return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32602, message: "Invalid support request; send the documented minimal contract with no private file URLs or callback URL." } });
   const startedAt = Date.now();
   try { const resolved = await resolveBobbySupportRequest(request); const response = resolved.response as { status?: string; interaction_id?: string | null }; await recordIntegrationAudit({ surface: "bobby", eventType: "resolve_support_request", outcome: "accepted", statusCode: 200, slackWorkspaceId: request.customer.slack_team_id, slackUserId: request.customer.slack_user_id, method: "tools/call", toolName: "resolve_support_request", interactionId: response.interaction_id ?? null, metadata: { requestId: request.request_id, duplicate: resolved.duplicate, status: response.status ?? "unknown", durationMs: Date.now() - startedAt } }); return respond({ content: [{ type: "text", text: JSON.stringify(resolved.response) }] }); }
   catch (error) { await recordIntegrationAudit({ surface: "bobby", eventType: "resolve_support_request", outcome: "error", statusCode: 500, metadata: { durationMs: Date.now() - startedAt } }); return res.status(500).json({ jsonrpc: "2.0", id, error: { code: -32603, message: "Light Labs could not safely resolve the request." } }); }

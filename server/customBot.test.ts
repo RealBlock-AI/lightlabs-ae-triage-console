@@ -3,6 +3,9 @@ import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { customBotIngest } from "./customBot";
 import { setIngestPolicy } from "./ingestPolicy";
+import { getDb } from "./db";
+import { externalSlackIdentityCandidates } from "../drizzle/schema";
+import { and, eq } from "drizzle-orm";
 
 describe("custom-bot ingestion", () => {
   let server: ReturnType<typeof createServer>;
@@ -12,6 +15,7 @@ describe("custom-bot ingestion", () => {
   beforeAll(async () => {
     await setIngestPolicy({ workspaceId: "T_CUSTOM_TEST", channelId: "C_CUSTOM_TEST", authoritativeTransport: "custom_bridge", enabled: true });
     await setIngestPolicy({ workspaceId: "T_CANONICAL", channelId: "C_CANONICAL", authoritativeTransport: "custom_bridge", enabled: true });
+    await setIngestPolicy({ workspaceId: "T_EXTERNAL", channelId: "D_EXTERNAL", authoritativeTransport: "custom_bridge", enabled: true });
     const app = express(); app.use(express.json()); app.post("/integrations/slack-bot/ingest", customBotIngest);
     server = createServer(app);
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", () => resolve()));
@@ -38,6 +42,17 @@ describe("custom-bot ingestion", () => {
     const firstPayload = await first.json(); const retryPayload = await retry.json();
     expect(firstPayload).toMatchObject({ ok: true, duplicate: false, lane: "escalate" });
     expect(retryPayload).toMatchObject({ ok: true, duplicate: true, interaction_id: firstPayload.interaction_id });
+  }, 15_000);
+
+  it("accepts a stable channel:ts fallback as externalEventId and creates a pending external candidate from Slack-provided externality", async () => {
+    const messageTs = `${Date.now()}.000001`; const externalEventId = `D_EXTERNAL:${messageTs}`;
+    const canonical = { provider: "slack", externalEventId, workspaceId: "T_EXTERNAL", slackAppId: "A_EXTERNAL", conversationId: "D_EXTERNAL", conversationType: "im", senderSlackUserId: "U_EXTERNAL", messageTs, text: "I need help with a testing order.", receivedAt: new Date().toISOString(), isExternal: true, isExternallySharedChannel: false };
+    const first = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify(canonical) });
+    const retry = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify(canonical) });
+    expect(await first.json()).toMatchObject({ ok: true, duplicate: false, identity_status: "pending_candidate" }); expect(await retry.json()).toMatchObject({ ok: true, duplicate: true, identity_status: "pending_candidate" });
+    const db = await getDb(); const candidates = await db!.select().from(externalSlackIdentityCandidates).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, "T_EXTERNAL"), eq(externalSlackIdentityCandidates.slackUserId, "U_EXTERNAL")));
+    expect(candidates).toHaveLength(1); expect(candidates[0]).toMatchObject({ status: "pending", lastChannelId: "D_EXTERNAL", sourceTransport: "custom_bridge", externallySharedChannel: 0 });
+    await db!.delete(externalSlackIdentityCandidates).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, "T_EXTERNAL"), eq(externalSlackIdentityCandidates.slackUserId, "U_EXTERNAL")));
   }, 15_000);
 
   it("returns a non-retryable audited skip when native Slack is authoritative for the same bridge channel", async () => {
