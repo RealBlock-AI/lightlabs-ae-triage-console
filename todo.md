@@ -33,6 +33,7 @@
 - [x] Document the confirmed Bobby response values, canonical unknown-field handling, and v0.1 answered-policy boundary
 - [x] Add authoritative per-channel native-versus-bridge ingest policy with audited non-retryable skips
 - [x] Add the Bobby bearer `WWW-Authenticate` header and validate its MCP notification behavior
+- [x] Apply and verify the Bobby bearer challenge on its health endpoint as well as its MCP endpoint
 - [x] Validate the approved native-event, canonical-bridge, duplicate-prevention, and fail-closed Bobby scenarios
 - [x] Add native `/ingest` regression coverage for accepted native-authoritative and skipped bridge-authoritative channels
 - [x] Accept the Slack agent’s canonical event shape at the authenticated custom-bot endpoint without weakening native Slack verification

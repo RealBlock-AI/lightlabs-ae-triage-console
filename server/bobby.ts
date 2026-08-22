@@ -18,7 +18,7 @@ export function hasValidBobbyCredential(req: Request) {
 }
 
 export function bobbyHealth(req: Request, res: Response) {
-  if (!hasValidBobbyCredential(req)) return res.status(401).json({ ok: false, error: "Unauthorized Bobby credential." });
+  if (!hasValidBobbyCredential(req)) { res.setHeader("WWW-Authenticate", "Bearer realm=\"light-labs-bobby\""); return res.status(401).json({ ok: false, error: "Unauthorized Bobby credential." }); }
   return res.json({ ok: true, service: "light-labs-bobby-support" });
 }
 

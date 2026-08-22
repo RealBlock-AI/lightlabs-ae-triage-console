@@ -4,19 +4,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { bobbySupportRequests, hubspotContextSnapshots } from "../drizzle/schema";
 import { getDb } from "./db";
-import { bobbyMcp } from "./bobby";
+import { bobbyHealth, bobbyMcp } from "./bobby";
 import { ensureDemoData } from "./triage";
 
 describe("Bobby support-resolution MCP", () => {
   let server: ReturnType<typeof createServer>; let baseUrl = "";
   const requestId = `req_bobby_${Date.now()}`;
   const headers = { "content-type": "application/json", Authorization: `Bearer ${process.env.BOBBY_MCP_TOKEN}` };
-  beforeAll(async () => { const app = express(); app.use(express.json()); app.post("/integrations/bobby/mcp", bobbyMcp); server = createServer(app); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", () => resolve())); const address = server.address(); if (!address || typeof address === "string") throw new Error("Unable to start Bobby MCP test server."); baseUrl = `http://127.0.0.1:${address.port}`; });
+  beforeAll(async () => { const app = express(); app.use(express.json()); app.get("/integrations/bobby/health", bobbyHealth); app.post("/integrations/bobby/mcp", bobbyMcp); server = createServer(app); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", () => resolve())); const address = server.address(); if (!address || typeof address === "string") throw new Error("Unable to start Bobby MCP test server."); baseUrl = `http://127.0.0.1:${address.port}`; });
   afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
   it("returns a standards-compliant bearer challenge and accepts an empty 202 initialized notification", async () => {
     const rejected = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers: { "content-type": "application/json", Authorization: "Bearer invalid" }, body: JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize" }) });
+    const healthRejected = await fetch(`${baseUrl}/integrations/bobby/health`, { headers: { Authorization: "Bearer invalid" } });
     const initialized = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
     expect(rejected.status).toBe(401); expect(rejected.headers.get("www-authenticate")).toBe('Bearer realm="light-labs-bobby"');
+    expect(healthRejected.status).toBe(401); expect(healthRejected.headers.get("www-authenticate")).toBe('Bearer realm="light-labs-bobby"');
     expect(initialized.status).toBe(202); expect(await initialized.text()).toBe("");
   });
   it("lists the single safe tool and returns one idempotent no-match response for an unmapped customer", async () => {
