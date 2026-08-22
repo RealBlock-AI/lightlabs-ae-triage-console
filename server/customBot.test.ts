@@ -27,4 +27,13 @@ describe("custom-bot ingestion", () => {
     expect(firstPayload).toMatchObject({ ok: true, duplicate: false, lane: "escalate" });
     expect(retryPayload).toMatchObject({ ok: true, duplicate: true, interaction_id: firstPayload.interaction_id });
   }, 15_000);
+
+  it("accepts the Slack agent canonical event record through the separate bearer-authenticated boundary", async () => {
+    const canonical = { provider: "slack", externalEventId: `Ev_canonical_${Date.now()}`, workspaceId: "T_CANONICAL", slackAppId: "A_CANONICAL", conversationId: "C_CANONICAL", conversationType: "channel", senderSlackUserId: "U_CANONICAL", messageTs: "1780001000.000001", threadTs: "1780000000.000001", text: "Please help with this production result.", receivedAt: new Date().toISOString(), isExternallySharedChannel: false, rawPayload: { intentionally: "not persisted" } };
+    const first = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify(canonical) });
+    const retry = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify({ ...canonical, conversationId: "C_CANONICAL_RETRY", messageTs: "1780001000.000002" }) });
+    const firstPayload = await first.json(); const retryPayload = await retry.json();
+    expect(firstPayload).toMatchObject({ ok: true, duplicate: false, lane: "escalate" });
+    expect(retryPayload).toMatchObject({ ok: true, duplicate: true, interaction_id: firstPayload.interaction_id });
+  }, 15_000);
 });
