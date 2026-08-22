@@ -27,7 +27,7 @@
 - [x] Re-review the public Bobby integration guidance and implement compatible hardening recommendations
 - [x] Reconcile the Bobby proposal’s `/mcp` bearer branch and account-lookup tools with the separate implemented Bobby MCP endpoint
 - [x] Provide the Slack agent a single final production instruction with the approved endpoint and tool contract
-- [ ] Scope a separate approval-gated phase for AE Slack OAuth and human-identity posting
+- [x] Scope a separate approval-gated phase for AE Slack OAuth and human-identity posting
 - [x] Decide and enforce one authoritative customer-ingest path per approved Slack workspace/channel to prevent native-event and bridge duplicates
 - [x] Add the standard `WWW-Authenticate` response header to rejected Bobby bearer requests
 - [x] Document the confirmed Bobby response values, canonical unknown-field handling, and v0.1 answered-policy boundary
