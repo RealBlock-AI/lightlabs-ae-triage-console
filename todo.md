@@ -22,6 +22,10 @@
 - [x] Document and test the intentionally blocked `answered` status until approved response templates exist
 - [x] Prove a verified Bobby sender with fresh context and sufficient detail still escalates without an approved response template
 - [x] Prove the v0.1 Bobby policy cannot emit `answered` for an otherwise fully verified request
+- [ ] Inspect the latest Slack channel message audit evidence and verify whether it used Events API or Slackbot MCP
+- [ ] Validate the registered `/mcp` Slack Identity Auth connection independently from native channel-event ingestion
+- [ ] Re-review the now-public integration artifact and implement compatible hardening recommendations
+- [x] Make safely unassigned Slack escalations visible to administrators without exposing them to unrelated AEs
 - [x] Assess and normalize the account-to-contact relationship for verified Slack and HubSpot identity resolution
 - [x] Evaluate knowledge source, document, section, and summary tables for Markdown preservation and retrieval efficiency
 - [x] Produce a prioritized database field-type, constraint, index, and auditability improvement roadmap

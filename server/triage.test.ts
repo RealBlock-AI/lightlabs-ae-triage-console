@@ -60,6 +60,15 @@ describe("permanent AE triage safety contract", () => {
     expect(retry.interaction.id).toBe(first.interaction.id);
   });
 
+  it("shows unassigned safety escalations only to an administrator and never to unrelated AEs", async () => {
+    const eventId = `Ev_unassigned_admin_${Date.now()}`;
+    const result = await runTriage({ source: "slack", channelRef: `unassigned-admin|${eventId}`, externalEventId: eventId, slackUserId: "U_UNASSIGNED_ADMIN", slackWorkspaceId: "T_UNASSIGNED_ADMIN", rawText: "Can you confirm this lot result?" });
+    expect((await getQueue("usr_admin")).some(item => item.id === result.interaction.id)).toBe(true);
+    expect((await getQueue("usr_sarah")).some(item => item.id === result.interaction.id)).toBe(false);
+    expect(await getItemForViewer(result.interaction.id, "usr_admin")).toBeDefined();
+    expect(await getItemForViewer(result.interaction.id, "usr_marcus")).toBeUndefined();
+  });
+
   it("keeps the in-flight Appendix A order future-dated so the permanent demo cannot rot", async () => {
     await ensureDemoData();
     const db = await getDb();
