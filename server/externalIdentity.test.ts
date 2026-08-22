@@ -12,7 +12,7 @@ describe("external Slack identity candidates", () => {
     expect(await getContactBySlackUser({ workspaceId, slackUserId })).toMatchObject({ status: "pending_candidate", candidate: { last_channel_id: "D_EXT" } });
     const db = await getDb(); await resolveExternalSlackIdentityCandidate({ workspaceId, slackUserId, contactId: "con_northwind_ops", resolvedByUserId: "usr_admin" });
     const candidate = (await db!.select().from(externalSlackIdentityCandidates).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, workspaceId), eq(externalSlackIdentityCandidates.slackUserId, slackUserId))).limit(1))[0]; const interaction = (await db!.select().from(interactions).where(eq(interactions.id, triage.interaction.id)).limit(1))[0];
-    expect(candidate).toMatchObject({ status: "mapped", resolvedContactId: "con_northwind_ops", resolvedByUserId: "usr_admin" }); expect(interaction).toMatchObject({ contactId: "con_northwind_ops", accountId: "acct_northwind" }); expect(interaction?.lane).toBe("escalate");
+    expect(candidate).toMatchObject({ status: "mapped", resolvedContactId: "con_northwind_ops", resolvedByUserId: "usr_admin" }); expect(interaction).toMatchObject({ contactId: "con_northwind_ops", accountId: "acct_northwind", ownerId: "usr_sarah" }); expect(interaction?.lane).toBe("escalate");
     await db!.delete(externalSlackIdentityCandidates).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, workspaceId), eq(externalSlackIdentityCandidates.slackUserId, slackUserId)));
   });
 });

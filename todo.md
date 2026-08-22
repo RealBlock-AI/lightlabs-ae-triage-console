@@ -13,7 +13,7 @@
 - [x] Save a deployment checkpoint and deliver permanent-hosting handoff
 - [x] Define the production Slack Events API payload contract and signing-verification requirements
 - [x] Define the MCP server tool surface, OAuth resource server model, and Slack connector configuration
-- [ ] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
+- [x] Implement the selected Slack-to-triage integration and production-secret configuration after architecture approval
 - [x] Reconcile the Bobby `resolve_support_request` contract with verified Light Labs identity, knowledge, and safety gates
 - [x] Implement a constrained Bobby-compatible support-resolution MCP tool with request idempotency and privacy controls
 - [x] Validate the Bobby tool with safe response cases and deliver finalized integration decisions
@@ -90,10 +90,14 @@
 - [x] Integrate verified mapping outcomes into the live Slack triage and Slackbot data-access boundaries
 - [x] Refresh and persist a HubSpot context snapshot immediately after an exact-email contact mapping
 - [x] Prove a fresh mapped HubSpot context is recognized by live Slack triage while absent or stale context is force-escalated
-- [ ] Configure and validate the bridge-only Bobby customer-ingest path with securely provisioned bearer credentials
+- [x] Configure and validate the bridge-only Bobby customer-ingest path with securely provisioned bearer credentials
 - [x] Preserve Socket Mode externality metadata and stable `externalEventId` fallback semantics at the custom bridge boundary
 - [x] Add Bobby MCP `search_knowledge` with attributed numeric retrieval relevance and existing answer-gate reasons
 - [x] Add Bobby MCP `get_contact_by_slack_user` with verified, pending-candidate, unmapped, and revoked identity states
 - [x] Persist first-contact external Slack identity candidates without inferring name or email
 - [x] Build administrator delivery visibility and a separate unmapped-customer mapping workflow
 - [ ] Validate bridge DM/channel delivery, idempotency, candidate handling, knowledge retrieval, and no-answer safety gates
+- [ ] Inspect the first credentialed Bobby bridge deliveries and identify the real workspace, sender, and conversation IDs
+- [ ] Save the real channel as bridge-only authoritative after the first authenticated delivery
+- [ ] Validate live first-contact candidate, Bobby knowledge retrieval, and blocked-answer behavior after bridge activation
+- [x] Complete the final application-side readiness review for bridge activation and internal Slackbot onboarding

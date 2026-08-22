@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { contactIdentities, contacts, externalSlackIdentityCandidates, interactions } from "../drizzle/schema";
+import { accounts, contactIdentities, contacts, externalSlackIdentityCandidates, interactions } from "../drizzle/schema";
 import { getDb } from "./db";
 
 export type ContactBySlackUserStatus = "verified" | "pending_candidate" | "unmapped" | "revoked";
@@ -33,9 +33,9 @@ export async function listExternalSlackIdentityCandidates() {
 export async function resolveExternalSlackIdentityCandidate(input: { workspaceId: string; slackUserId: string; contactId: string; resolvedByUserId?: string | null }) {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const candidate = (await db.select().from(externalSlackIdentityCandidates).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, input.workspaceId), eq(externalSlackIdentityCandidates.slackUserId, input.slackUserId), eq(externalSlackIdentityCandidates.status, "pending"))).limit(1))[0];
-  const contact = (await db.select().from(contacts).where(eq(contacts.id, input.contactId)).limit(1))[0];
+  const contact = (await db.select().from(contacts).where(eq(contacts.id, input.contactId)).limit(1))[0]; const account = contact ? (await db.select().from(accounts).where(eq(accounts.id, contact.accountId)).limit(1))[0] : undefined;
   if (!candidate || !contact) return;
   const resolvedAt = new Date();
   await db.update(externalSlackIdentityCandidates).set({ status: "mapped", resolvedContactId: input.contactId, resolvedAt, resolvedByUserId: input.resolvedByUserId ?? null }).where(eq(externalSlackIdentityCandidates.id, candidate.id));
-  if (candidate.lastInteractionId) await db.update(interactions).set({ contactId: contact.id, accountId: contact.accountId, ownerId: null }).where(eq(interactions.id, candidate.lastInteractionId));
+  if (candidate.lastInteractionId) await db.update(interactions).set({ contactId: contact.id, accountId: contact.accountId, ownerId: account?.ownerId ?? null }).where(eq(interactions.id, candidate.lastInteractionId));
 }

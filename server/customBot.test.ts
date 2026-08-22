@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { customBotIngest } from "./customBot";
+import { customBotHealth, customBotIngest } from "./customBot";
 import { setIngestPolicy } from "./ingestPolicy";
 import { getDb } from "./db";
 import { externalSlackIdentityCandidates } from "../drizzle/schema";
@@ -16,13 +16,18 @@ describe("custom-bot ingestion", () => {
     await setIngestPolicy({ workspaceId: "T_CUSTOM_TEST", channelId: "C_CUSTOM_TEST", authoritativeTransport: "custom_bridge", enabled: true });
     await setIngestPolicy({ workspaceId: "T_CANONICAL", channelId: "C_CANONICAL", authoritativeTransport: "custom_bridge", enabled: true });
     await setIngestPolicy({ workspaceId: "T_EXTERNAL", channelId: "D_EXTERNAL", authoritativeTransport: "custom_bridge", enabled: true });
-    const app = express(); app.use(express.json()); app.post("/integrations/slack-bot/ingest", customBotIngest);
+    const app = express(); app.use(express.json()); app.get("/integrations/slack-bot/health", customBotHealth); app.post("/integrations/slack-bot/ingest", customBotIngest);
     server = createServer(app);
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", () => resolve()));
     const address = server.address(); if (!address || typeof address === "string") throw new Error("Unable to start custom-bot test server.");
     baseUrl = `http://127.0.0.1:${address.port}`;
   });
   afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
+
+  it("exposes a bearer-protected, audited readiness check without accepting a customer message", async () => {
+    const rejected = await fetch(`${baseUrl}/integrations/slack-bot/health`, { headers: { Authorization: "Bearer invalid" } }); const accepted = await fetch(`${baseUrl}/integrations/slack-bot/health`, { headers: { Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` } });
+    expect(rejected.status).toBe(401); expect(rejected.headers.get("www-authenticate")).toBe('Bearer realm="light-labs-custom-bridge"'); expect(await accepted.json()).toEqual({ ok: true, service: "light-labs-custom-bot-ingest" });
+  });
 
   it("requires its own credential and idempotently persists normalized custom-bot events", async () => {
     const event = { source: "custom_slack_bot", external_event_id: eventId, workspace_id: "T_CUSTOM_TEST", channel_id: "C_CUSTOM_TEST", channel_type: "channel", slack_user_id: "U_CUSTOM_TEST", message_ts: "1780000000.000001", text: "Please confirm the current order status.", event_type: "app_mention", received_at: new Date().toISOString() };

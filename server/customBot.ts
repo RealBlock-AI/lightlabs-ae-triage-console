@@ -18,8 +18,8 @@ export function hasValidCustomBotCredential(req: Request) {
 }
 
 export function customBotHealth(req: Request, res: Response) {
-  if (!hasValidCustomBotCredential(req)) return res.status(401).json({ ok: false, error: "Unauthorized custom-bot credential." });
-  return res.json({ ok: true, service: "light-labs-custom-bot-ingest" });
+  if (!hasValidCustomBotCredential(req)) { res.setHeader("WWW-Authenticate", 'Bearer realm="light-labs-custom-bridge"'); void recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_health", outcome: "rejected", statusCode: 401, metadata: { transport: "custom_bridge" } }); return res.status(401).json({ ok: false, error: "Unauthorized custom-bot credential." }); }
+  void recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_health", outcome: "accepted", statusCode: 200, metadata: { transport: "custom_bridge" } }); return res.json({ ok: true, service: "light-labs-custom-bot-ingest" });
 }
 
 type NormalizedBotEvent = {
@@ -53,7 +53,7 @@ function normalizedBotEvent(input: unknown): NormalizedBotEvent | undefined {
 }
 
 export async function customBotIngest(req: Request, res: Response) {
-  if (!hasValidCustomBotCredential(req)) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_credential_rejected", outcome: "rejected", statusCode: 401, metadata: { transport: "custom_bot" } }); return res.status(401).json({ ok: false, error: "Unauthorized custom-bot credential." }); }
+  if (!hasValidCustomBotCredential(req)) { res.setHeader("WWW-Authenticate", 'Bearer realm="light-labs-custom-bridge"'); await recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_credential_rejected", outcome: "rejected", statusCode: 401, metadata: { transport: "custom_bridge" } }); return res.status(401).json({ ok: false, error: "Unauthorized custom-bot credential." }); }
   const event = normalizedBotEvent(req.body);
   if (!event) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_invalid_payload", outcome: "rejected", statusCode: 400, metadata: { transport: "custom_bot" } }); return res.status(400).json({ ok: false, error: "Expected the documented normalized custom-bot event shape." }); }
   const policy = await evaluateIngestPolicy({ workspaceId: event.workspace_id, channelId: event.channel_id, transport: "custom_bridge" });

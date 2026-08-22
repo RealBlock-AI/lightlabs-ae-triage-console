@@ -26,6 +26,8 @@ LIGHT_LABS_BOT_INGEST_SECRET=$LIGHT_LABS_BOT_INGEST_SECRET
 
 Never place either bearer token in a Slack app form, browser bundle, public prompt, or Slack message.
 
+Before forwarding customer traffic, Bobby should verify its bridge credential with `GET https://lighttriage-gdngkmys.manus.space/integrations/slack-bot/health` and `Authorization: Bearer $LIGHT_LABS_BOT_INGEST_SECRET`. A successful response is `{ "ok": true, "service": "light-labs-custom-bot-ingest" }`. HTTP 401 includes a Bearer challenge and means the runtime secret is absent or mismatched; do not treat that as a successful local response.
+
 ## Bobby MCP call contract
 
 Bobby should initialize the MCP session, list tools, and call the deterministic tools below. The v0.1 server intentionally owns identity verification, fresh CRM context enforcement, knowledge evidence, safe triage, request ID idempotency, and the policy decision in one atomic server-side action.
