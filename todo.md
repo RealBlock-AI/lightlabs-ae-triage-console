@@ -28,6 +28,13 @@
 - [x] Reconcile the Bobby proposal’s `/mcp` bearer branch and account-lookup tools with the separate implemented Bobby MCP endpoint
 - [x] Provide the Slack agent a single final production instruction with the approved endpoint and tool contract
 - [ ] Scope a separate approval-gated phase for AE Slack OAuth and human-identity posting
+- [x] Decide and enforce one authoritative customer-ingest path per approved Slack workspace/channel to prevent native-event and bridge duplicates
+- [x] Add the standard `WWW-Authenticate` response header to rejected Bobby bearer requests
+- [x] Document the confirmed Bobby response values, canonical unknown-field handling, and v0.1 answered-policy boundary
+- [x] Add authoritative per-channel native-versus-bridge ingest policy with audited non-retryable skips
+- [x] Add the Bobby bearer `WWW-Authenticate` header and validate its MCP notification behavior
+- [x] Validate the approved native-event, canonical-bridge, duplicate-prevention, and fail-closed Bobby scenarios
+- [x] Add native `/ingest` regression coverage for accepted native-authoritative and skipped bridge-authoritative channels
 - [x] Accept the Slack agent’s canonical event shape at the authenticated custom-bot endpoint without weakening native Slack verification
 - [x] Accept the Slack agent’s canonical event shape at the authenticated custom-bot endpoint without weakening native Slack verification
 - [x] Reconcile the Bobby proposal’s `/mcp` bearer branch and account-lookup tools with the separate implemented Bobby MCP endpoint
@@ -51,7 +58,7 @@
 - [ ] Validate signed Slackbot onboarding with a real captured identity and approved tool access
 - [x] Inspect MCP and Slack ingest audit evidence for the reported Slackbot non-response
 - [x] Add durable privacy-minimized audit events for signed MCP discovery, MCP tool calls, and Slack ingest outcomes
-- [ ] Review the supplied integration-hardening guidance and implement applicable safety-compatible improvements
+- [x] Review the supplied integration-hardening guidance and implement applicable safety-compatible improvements
 - [x] Diagnose the live Slack Events API rejection and identify the custom-bot missing-header transport mismatch
 - [x] Verify the latest retried Slack deliveries against the durable audit trail
 - [x] Verify whether the custom bot now forwards an authenticated request after its signing-secret update

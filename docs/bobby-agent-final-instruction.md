@@ -39,17 +39,28 @@ Bobby should initialize the MCP session, list tools, and call **`resolve_support
     "name": "resolve_support_request",
     "arguments": {
       "request_id": "stable-slack-event-id",
-      "slack_team_id": "T…",
-      "slack_user_id": "U…",
-      "channel_id": "C…",
-      "message_ts": "1710000000.000001",
-      "text": "Original customer message only"
+      "schema_version": "1.0",
+      "requested_at": "2026-08-22T00:00:00.000Z",
+      "customer": {
+        "slack_team_id": "T…",
+        "slack_user_id": "U…",
+        "is_external": true
+      },
+      "conversation": {
+        "channel_id": "C…",
+        "channel_type": "channel",
+        "thread_ts": "1710000000.000001",
+        "messages": [
+          { "ts": "1710000000.000001", "user_id": "U…", "role": "customer", "text": "Original customer message only" }
+        ]
+      },
+      "analysis": { "question": "Optional routing hint", "urgency": "Optional routing hint" }
     }
   }
 }
 ```
 
-The response may be `no_match`, `needs_more_info`, or `escalate`. The `answered` result is intentionally blocked until Light Labs has versioned, approved reply templates and verified response evidence. Bobby must not convert an `escalate` response into a customer-facing answer.
+The response may be `no_match`, `needs_more_info`, or `escalate`. Unknown top-level fields are ignored, but all documented required fields must be present and valid. The `answered` result is intentionally blocked until Light Labs has versioned, approved reply templates and verified response evidence. Bobby must not convert an `escalate` response into a customer-facing answer. A rejected Bobby bearer token receives HTTP 401 with `WWW-Authenticate: Bearer realm="light-labs-bobby"`.
 
 ## Canonical Slack event bridge contract
 
@@ -75,6 +86,18 @@ The bridge may now send its existing `CanonicalSlackInbound` record to the **cus
 
 The bridge must send `Authorization: Bearer $LIGHT_LABS_BOT_INGEST_SECRET`, use the same `externalEventId` on retries, and treat only 2xx responses as accepted. It must never share the Slack signing secret with the bridge.
 
+## Authoritative channel transport policy
+
+Each live customer channel must use exactly one authorized ingest transport, selected in **Slack Connections → Prevent duplicate customer ingestion** before activation:
+
+| Authoritative transport | Slack configuration | What happens to the other path |
+|---|---|---|
+| `native_slack` | Slack Events API posts the original signed envelope to `/ingest` | Canonical bridge submissions receive an audited HTTP 202 `{ "ok": true, "skipped": true, "reason": "authoritative_native_slack" }`; do not retry them. |
+| `custom_bridge` | The custom Slack/Bobby bridge posts `CanonicalSlackInbound` to `/integrations/slack-bot/ingest` | Native Events API submissions receive the corresponding audited HTTP 202 bridge-authoritative skip; do not retry them. |
+| `disabled` | No customer message delivery should be enabled | Both paths are safely skipped with HTTP 202 until the channel is deliberately activated. |
+
+The user interface is the source of truth for workspace and channel IDs. Do not configure both paths as active for the same channel, and do not reinterpret a policy skip as a delivery error. This is the deterministic protection against cross-path duplicate customer interactions.
+
 ## Explicitly rejected alternatives
 
 > **Do not share the Slack signing secret with Bobby.** It destroys origin distinction, broadens the secret blast radius, and makes a request signed by Bobby indistinguishable from one signed by Slack.
@@ -91,7 +114,8 @@ The proposal to let account managers post as themselves via Slack user OAuth is 
 
 1. Bobby `initialize` and `tools/list` against `/integrations/bobby/mcp` return JSON and 200 with its bearer token.
 2. A bad Bobby token returns 401.
-3. The canonical bridge posts once to `/integrations/slack-bot/ingest` with its bearer token and gets a 200 response.
+3. The canonical bridge posts once to `/integrations/slack-bot/ingest` with its bearer token and gets a 200 response when `custom_bridge` is authoritative for that channel.
 4. Retrying the exact canonical record creates no second interaction.
-5. Native Slack Events continue using `/ingest`; the accepted event retains its original Slack event ID.
+5. Native Slack Events continue using `/ingest` when `native_slack` is authoritative; the accepted event retains its original Slack event ID.
 6. Bobby never receives or emits a customer-facing answer unless a later approved-template release enables the `answered` policy path.
+7. Submitting to the non-authoritative transport returns an audited 202 skip and must not be retried.

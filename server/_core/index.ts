@@ -8,17 +8,17 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { teamMembers } from "../../drizzle/schema";
-import { getItemForViewer, getQueue, runTriage } from "../triage";
+import { getItemForViewer, getQueue } from "../triage";
 import { getKnowledgeSection, retrieveKnowledge } from "../knowledge";
 import { completeHubSpotAuthorization } from "../hubspot";
 import { capturePendingMcpIdentity } from "../mcpIdentity";
 import { recordIntegrationAudit } from "../integrationAudit";
 import { customBotHealth, customBotIngest } from "../customBot";
 import { bobbyHealth, bobbyMcp } from "../bobby";
+import { nativeSlackIngest, verifyNativeSlackRequest as verifySlackRequest } from "../nativeIngest";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -46,32 +46,7 @@ async function startServer() {
   app.use(express.json({ limit: "50mb", verify: (req, _res, buffer) => { (req as express.Request & { rawBody?: string }).rawBody = buffer.toString("utf8"); } }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.use(["/ingest", "/mcp"], (req, res, next) => { const startedAt = Date.now(); res.on("finish", () => { const body = req.body as Record<string, unknown> | undefined; const event = body?.event && typeof body.event === "object" ? body.event as Record<string, unknown> : body; const slackMeta = body?.params && typeof body.params === "object" ? (body.params as Record<string, unknown>)._meta as { slack?: { user_id?: string; team_id?: string; userId?: string; teamId?: string } } | undefined : undefined; const workspaceId = typeof body?.team_id === "string" ? body.team_id : typeof event?.team_id === "string" ? event.team_id : slackMeta?.slack?.team_id ?? slackMeta?.slack?.teamId ?? null; const userId = typeof event?.user === "string" ? event.user : slackMeta?.slack?.user_id ?? slackMeta?.slack?.userId ?? null; void recordIntegrationAudit({ surface: req.path === "/mcp" ? "mcp" : "slack_ingest", eventType: req.path === "/mcp" ? String(body?.method ?? "unknown") : String(body?.type ?? event?.type ?? "unknown"), outcome: res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "rejected" : "accepted", statusCode: res.statusCode, slackWorkspaceId: workspaceId, slackUserId: userId, method: req.path === "/mcp" ? String(body?.method ?? "unknown") : null, toolName: req.path === "/mcp" && body?.params && typeof body.params === "object" ? String((body.params as Record<string, unknown>).name ?? "") || null : null, metadata: { durationMs: Date.now() - startedAt, isEventEnvelope: Boolean(body?.event) } }); }); next(); });
-  app.post("/ingest", async (req, res) => {
-    const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
-    const demoMode = process.env.TRIAGE_DEMO_MODE !== "false";
-    const verification = verifySlackRequest(req, raw);
-    if (!demoMode && !verification.ok) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "signature_rejected", outcome: "rejected", statusCode: 401, metadata: { verificationFailure: verification.reason } }); return res.status(401).json({ ok: false, error: "Invalid Slack request signature." }); }
-    const body = req.body as Record<string, unknown>;
-    if (body.type === "url_verification") return res.json({ challenge: body.challenge });
-    const event = body.event && typeof body.event === "object" ? body.event as Record<string, unknown> : body;
-    const eventIsEnvelope = Boolean(body.event);
-    const source = eventIsEnvelope ? "slack" : event.source;
-    const slackUserId = event.user ?? event.slack_user_id;
-    const channel = event.channel;
-    const timestamp = event.ts ?? event.timestamp;
-    const text = event.text;
-    if (source !== "slack" || typeof slackUserId !== "string" || typeof channel !== "string" || typeof timestamp !== "string" || typeof text !== "string") return res.status(400).json({ ok: false, error: "Expected a Slack message event or simplified demo-shaped body." });
-    try {
-      const workspaceId = typeof body.team_id === "string" ? body.team_id : typeof event.team_id === "string" ? event.team_id : demoMode && !eventIsEnvelope ? "T_DEMO" : null;
-      const externalEventId = typeof body.event_id === "string" ? body.event_id : typeof event.event_id === "string" ? event.event_id : `${channel}|${timestamp}`;
-      const sourceReceivedAt = typeof body.event_time === "number" ? new Date(body.event_time * 1000) : typeof event.event_time === "number" ? new Date(event.event_time * 1000) : undefined;
-      const result = await runTriage({ source: "slack", channelRef: `${channel}|${timestamp}`, externalEventId, sourceSchemaVersion: eventIsEnvelope ? "slack-events-api-v1" : "slack-demo-v1", threadRef: typeof event.thread_ts === "string" ? event.thread_ts : null, sourceReceivedAt, slackUserId, slackWorkspaceId: workspaceId, rawText: text });
-      return res.json({ ok: true, duplicate: result.duplicate, interactionId: result.interaction.id, acknowledgment: result.interaction.acknowledgment, lane: result.interaction.lane, msToAck: result.interaction.msToAck });
-    } catch (error) {
-      console.error("ingest failed", error);
-      return res.status(500).json({ ok: false, error: "Unable to persist triage interaction." });
-    }
-  });
+  app.post("/ingest", nativeSlackIngest);
   app.get("/integrations/slack-bot/health", customBotHealth);
   app.post("/integrations/slack-bot/ingest", customBotIngest);
   app.get("/integrations/bobby/health", bobbyHealth);
@@ -164,16 +139,3 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
-
-function verifySlackRequest(req: express.Request, raw: string): { ok: boolean; reason?: "missing_secret" | "missing_headers" | "invalid_timestamp" | "stale_timestamp" | "signature_mismatch" } {
-  const secret = process.env.SLACK_SIGNING_SECRET;
-  const timestamp = req.header("x-slack-request-timestamp");
-  const signature = req.header("x-slack-signature");
-  if (!secret) return { ok: false, reason: "missing_secret" };
-  if (!timestamp || !signature) return { ok: false, reason: "missing_headers" };
-  const timestampNumber = Number(timestamp);
-  if (!Number.isFinite(timestampNumber)) return { ok: false, reason: "invalid_timestamp" };
-  if (Math.abs(Date.now() / 1000 - timestampNumber) > 300) return { ok: false, reason: "stale_timestamp" };
-  const expected = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${raw}`).digest("hex")}`;
-  return signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) ? { ok: true } : { ok: false, reason: "signature_mismatch" };
-}

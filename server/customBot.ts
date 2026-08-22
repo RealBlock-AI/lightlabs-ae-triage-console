@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { recordIntegrationAudit } from "./integrationAudit";
 import { runTriage } from "./triage";
+import { evaluateIngestPolicy } from "./ingestPolicy";
 
 function secretMatches(provided: string | undefined) {
   const expected = process.env.LIGHT_LABS_BOT_INGEST_SECRET;
@@ -52,6 +53,8 @@ export async function customBotIngest(req: Request, res: Response) {
   if (!hasValidCustomBotCredential(req)) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_credential_rejected", outcome: "rejected", statusCode: 401, metadata: { transport: "custom_bot" } }); return res.status(401).json({ ok: false, error: "Unauthorized custom-bot credential." }); }
   const event = normalizedBotEvent(req.body);
   if (!event) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: "custom_bot_invalid_payload", outcome: "rejected", statusCode: 400, metadata: { transport: "custom_bot" } }); return res.status(400).json({ ok: false, error: "Expected the documented normalized custom-bot event shape." }); }
+  const policy = await evaluateIngestPolicy({ workspaceId: event.workspace_id, channelId: event.channel_id, transport: "custom_bridge" });
+  if (!policy.allowed) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: `custom_bot:${event.event_type}`, outcome: "accepted", statusCode: 202, slackWorkspaceId: event.workspace_id, slackUserId: event.slack_user_id, metadata: { transport: "custom_bot", skipped: true, policyReason: policy.reason } }); return res.status(202).json({ ok: true, skipped: true, reason: policy.reason }); }
   try {
     const result = await runTriage({ source: "custom_slack_bot", channelRef: `custom|${event.workspace_id}|${event.external_event_id}`, externalEventId: event.external_event_id, sourceSchemaVersion: "custom-bot-v0.1", threadRef: event.thread_ts ?? null, sourceReceivedAt: new Date(event.received_at), slackUserId: event.slack_user_id, slackWorkspaceId: event.workspace_id, rawText: event.text });
     await recordIntegrationAudit({ surface: "slack_ingest", eventType: `custom_bot:${event.event_type}`, outcome: "accepted", statusCode: 200, slackWorkspaceId: event.workspace_id, slackUserId: event.slack_user_id, interactionId: result.interaction.id, metadata: { transport: "custom_bot", channelType: event.channel_type, duplicate: result.duplicate, hasThread: Boolean(event.thread_ts) } });

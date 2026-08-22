@@ -9,6 +9,7 @@ import { getKnowledgeDocument, getKnowledgeSection, listKnowledgeSources, refres
 import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listAccountsForContactMapping, listContactMappings, refreshHubSpotContactContext, searchHubSpotContactsByEmail, verifyAndMapContact, verifyHubSpotMcpConnection } from "./hubspot";
 import { approveMcpIdentityRequest, listInternalTeamMembers, listMcpIdentityRequests } from "./mcpIdentity";
 import { listIntegrationAudit } from "./integrationAudit";
+import { listIngestPolicies, setIngestPolicy } from "./ingestPolicy";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -59,6 +60,10 @@ export const appRouter = router({
     approveIdentity: adminProcedure.input(z.object({ requestId: z.string().min(1), teamMemberId: z.string().min(1) })).mutation(({ input }) => approveMcpIdentityRequest(input)),
   }),
   integrationAudit: router({ recent: adminProcedure.input(z.object({ surface: z.enum(["mcp", "slack_ingest"]).optional() }).optional()).query(({ input }) => listIntegrationAudit(input?.surface)) }),
+  ingestPolicies: router({
+    list: adminProcedure.query(() => listIngestPolicies()),
+    set: adminProcedure.input(z.object({ workspaceId: z.string().min(1).max(64), channelId: z.string().min(1).max(100), authoritativeTransport: z.enum(["native_slack", "custom_bridge", "disabled"]), enabled: z.boolean() })).mutation(({ input }) => setIngestPolicy(input)),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

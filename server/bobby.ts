@@ -58,11 +58,21 @@ export async function resolveBobbySupportRequest(input: BobbyRequest) {
 }
 
 export async function bobbyMcp(req: Request, res: Response) {
-  if (!hasValidBobbyCredential(req)) { await recordIntegrationAudit({ surface: "bobby", eventType: "credential_rejected", outcome: "rejected", statusCode: 401, metadata: {} }); return res.status(401).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Invalid Bobby credential." } }); }
+  if (!hasValidBobbyCredential(req)) { res.setHeader("WWW-Authenticate", "Bearer realm=\"light-labs-bobby\""); await recordIntegrationAudit({ surface: "bobby", eventType: "credential_rejected", outcome: "rejected", statusCode: 401, metadata: {} }); return res.status(401).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Invalid Bobby credential." } }); }
   res.setHeader("Mcp-Protocol-Version", "2025-06-18"); const body = req.body as { id?: string | number | null; method?: string; params?: Record<string, unknown> }; const id = body.id ?? null; const respond = (result: unknown) => res.json({ jsonrpc: "2.0", id, result });
   if (body.method === "initialize") return respond({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "light-labs-bobby-support", version: "0.1.0" } });
   if (body.method === "notifications/initialized") return res.status(202).end();
-  if (body.method === "tools/list") return respond({ tools: [{ name: "resolve_support_request", description: "Resolve one Bobby support request through verified Light Labs identity and deterministic safety policy. Never posts to Slack.", inputSchema: { type: "object", additionalProperties: true, required: ["request_id", "schema_version", "requested_at", "customer", "conversation"] } }] });
+  if (body.method === "tools/list") return respond({
+    tools: [{
+      name: "resolve_support_request",
+      description: "Resolve one Bobby support request through verified Light Labs identity and deterministic safety policy. Never posts to Slack.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: true,
+        required: ["request_id", "schema_version", "requested_at", "customer", "conversation"],
+      },
+    }],
+  });
   if (body.method !== "tools/call" || body.params?.name !== "resolve_support_request") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported Bobby MCP method or tool." } });
   const request = parsedRequest(body.params.arguments); if (!request) return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32602, message: "Invalid support request; send the documented minimal contract with no private file URLs or callback URL." } });
   const startedAt = Date.now();
