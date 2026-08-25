@@ -8,4 +8,4 @@
 - [x] Build record-backed evidence, jurisdiction-aware catalog recommendations, anchored knowledge explanations, templates, and auto-output demotions.
 - [x] Add the structured internal intake workflow, interaction audit details, citations, refusal states, and non-circular capacity controls.
 - [x] Cover domain, permissions, policy, evidence, triage, knowledge, UI, and evaluator probes with Vitest and visual checks.
-- [ ] Save a verified checkpoint and report the implementation, migration, probe results, and any blocked exceptions.
+- [x] Save a verified checkpoint and report the implementation, migration, probe results, and any blocked exceptions.
