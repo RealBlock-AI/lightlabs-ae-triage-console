@@ -17,6 +17,7 @@ import { ensurePrototypeSeed } from "./prototypeSeed";
 import { createStructuredIntake, getPrototypeItem, getPrototypeQueue, runPrototypeTriage } from "./prototype";
 import { capacityMultiple } from "./domain";
 import { getLimsConnectionStatus } from "./lims";
+import { DEMO_FIELDS, demoStatus, filterDemoProperties, getBySlackIdentity, getDemoAccount, getDemoContact, getVerificationClaim, listDemoCompanies, listDemoContacts, listDemoDeals, listDemoFields, listDemoPolicies, previewVerification, seedDemoHubSpot, updateDemoContactField, upsertDemoRecord, verifyClaim, type VerificationClaim } from "./demoHubspot";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -65,6 +66,25 @@ export const appRouter = router({
     section: publicProcedure.input(z.object({ sourceId: z.string().min(1), anchor: z.string().min(1) })).query(({ input }) => getKnowledgeSection(input.sourceId, input.anchor)),
     search: publicProcedure.input(z.object({ query: z.string().min(3).max(2000), interactionId: z.string().optional(), limit: z.number().int().min(1).max(5).optional() })).query(({ input }) => retrieveKnowledge(input)),
     refreshSource: publicProcedure.input(z.object({ sourceId: z.string().min(1), viewerId: z.literal("usr_admin") })).mutation(({ input }) => refreshKnowledgeSource(input.sourceId)),
+  }),
+  demoHubspot: router({
+    status: adminProcedure.query(() => demoStatus()),
+    bootstrap: adminProcedure.mutation(() => seedDemoHubSpot()),
+    fields: adminProcedure.query(() => listDemoFields()),
+    companies: adminProcedure.query(() => listDemoCompanies()),
+    contacts: adminProcedure.query(() => listDemoContacts()),
+    deals: adminProcedure.query(() => listDemoDeals()),
+    account: adminProcedure.input(z.object({ id: z.string().min(1) })).query(({ input }) => getDemoAccount(input.id)),
+    contact: adminProcedure.input(z.object({ id: z.string().min(1) })).query(({ input }) => getDemoContact(input.id)),
+    verificationPreview: adminProcedure.input(z.object({ schema_version: z.literal("0.1"), claim_id: z.string().min(7).max(96), submitted_at: z.string(), slack_team_id: z.string().min(3).max(64), slack_user_id: z.string().min(3).max(120), slack_display_name: z.string().max(160), claimed_full_name: z.string().min(1).max(160), claimed_email: z.string().email(), claimed_company: z.string().min(1).max(240), claimed_email_source: z.enum(["slack", "typed"]) })).mutation(({ input }) => previewVerification(input as VerificationClaim)),
+    verifyClaim: adminProcedure.input(z.object({ schema_version: z.literal("0.1"), claim_id: z.string().min(7).max(96), submitted_at: z.string(), slack_team_id: z.string().min(3).max(64), slack_user_id: z.string().min(3).max(120), slack_display_name: z.string().max(160), claimed_full_name: z.string().min(1).max(160), claimed_email: z.string().email(), claimed_company: z.string().min(1).max(240), claimed_email_source: z.enum(["slack", "typed"]) })).mutation(({ input, ctx }) => verifyClaim(input as VerificationClaim, String(ctx.user.id))),
+    claimStatus: adminProcedure.input(z.object({ claimId: z.string().min(7).max(96) })).query(({ input }) => getVerificationClaim(input.claimId)),
+    bySlackIdentity: adminProcedure.input(z.object({ slackTeamId: z.string().min(3), slackUserId: z.string().min(3) })).query(({ input }) => getBySlackIdentity(input.slackTeamId, input.slackUserId)),
+    fieldCatalog: adminProcedure.query(() => DEMO_FIELDS),
+    policies: adminProcedure.query(() => listDemoPolicies()),
+    updateContactField: adminProcedure.input(z.object({ contactId: z.string().min(1), fieldKey: z.string().min(1).max(160), value: z.union([z.string(), z.number(), z.boolean(), z.null()]) })).mutation(({ input, ctx }) => updateDemoContactField({ ...input, actorUserId: String(ctx.user.id) })),
+    upsert: adminProcedure.input(z.object({ objectType: z.enum(["companies", "contacts", "deals"]), id: z.string().min(1).max(64), properties: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])) })).mutation(({ input, ctx }) => upsertDemoRecord({ ...input, actorUserId: String(ctx.user.id) })),
+    filterProperties: adminProcedure.input(z.object({ role: z.enum(["admin", "user", "read_only"]), objectType: z.enum(["companies", "contacts", "deals"]), properties: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])) })).query(({ input }) => filterDemoProperties(input.role, input.objectType, input.properties)),
   }),
   hubspot: router({
     status: adminProcedure.query(() => getHubSpotConnectionStatus()),

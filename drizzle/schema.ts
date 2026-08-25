@@ -73,3 +73,38 @@ export const hubspotContextSnapshots = mysqlTable("hubspot_context_snapshots", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+
+export const demoHubspotFieldDefinitions = mysqlTable("demo_hubspot_field_definitions", {
+  id: varchar("id", { length: 96 }).primaryKey(), objectType: mysqlEnum("object_type", ["companies", "contacts", "deals"]).notNull(), fieldKey: varchar("field_key", { length: 160 }).notNull(), label: varchar("label", { length: 200 }).notNull(), dataType: mysqlEnum("data_type", ["text", "number", "date", "url", "boolean"]).notNull().default("text"), searchable: int("searchable").notNull().default(0), writable: int("writable").notNull().default(0), displayedByDefault: int("displayed_by_default").notNull().default(1), sortOrder: int("sort_order").notNull().default(0),
+}, table => [uniqueIndex("demo_hubspot_field_unique").on(table.objectType, table.fieldKey), index("demo_hubspot_field_search_idx").on(table.objectType, table.searchable)]);
+
+export const demoHubspotCompanies = mysqlTable("demo_hubspot_companies", {
+  id: varchar("id", { length: 64 }).primaryKey(), accountId: varchar("account_id", { length: 64 }), properties: json("properties").$type<Record<string, string | number | boolean | null>>().notNull(), normalizedName: varchar("normalized_name", { length: 240 }).notNull(), normalizedDomain: varchar("normalized_domain", { length: 240 }), createdAt: datetime("created_at").notNull(), updatedAt: datetime("updated_at").notNull(),
+}, table => [index("demo_hubspot_company_name_idx").on(table.normalizedName), index("demo_hubspot_company_domain_idx").on(table.normalizedDomain), index("demo_hubspot_company_account_idx").on(table.accountId)]);
+
+export const demoHubspotContacts = mysqlTable("demo_hubspot_contacts", {
+  id: varchar("id", { length: 64 }).primaryKey(), companyId: varchar("company_id", { length: 64 }), accountId: varchar("account_id", { length: 64 }), properties: json("properties").$type<Record<string, string | number | boolean | null>>().notNull(), normalizedName: varchar("normalized_name", { length: 240 }).notNull(), normalizedEmail: varchar("normalized_email", { length: 320 }), normalizedCompany: varchar("normalized_company", { length: 240 }), slackId: varchar("slack_id", { length: 120 }), slackTeamId: varchar("slack_team_id", { length: 64 }), verificationStatus: mysqlEnum("verification_status", ["unverified", "verified", "revoked"]).notNull().default("unverified"), verifiedAt: datetime("verified_at"), createdAt: datetime("created_at").notNull(), updatedAt: datetime("updated_at").notNull(),
+}, table => [index("demo_hubspot_contact_name_idx").on(table.normalizedName), index("demo_hubspot_contact_email_idx").on(table.normalizedEmail), index("demo_hubspot_contact_company_idx").on(table.normalizedCompany), uniqueIndex("demo_hubspot_contact_slack_unique").on(table.slackTeamId, table.slackId), index("demo_hubspot_contact_account_idx").on(table.accountId)]);
+
+export const demoHubspotDeals = mysqlTable("demo_hubspot_deals", {
+  id: varchar("id", { length: 64 }).primaryKey(), companyId: varchar("company_id", { length: 64 }), accountId: varchar("account_id", { length: 64 }), contactId: varchar("contact_id", { length: 64 }), properties: json("properties").$type<Record<string, string | number | boolean | null>>().notNull(), createdAt: datetime("created_at").notNull(), updatedAt: datetime("updated_at").notNull(),
+}, table => [index("demo_hubspot_deal_company_idx").on(table.companyId), index("demo_hubspot_deal_account_idx").on(table.accountId), index("demo_hubspot_deal_contact_idx").on(table.contactId)]);
+
+export const demoHubspotAccessPolicies = mysqlTable("demo_hubspot_access_policies", {
+  id: varchar("id", { length: 96 }).primaryKey(), role: mysqlEnum("role", ["admin", "user", "read_only"]).notNull(), objectType: mysqlEnum("object_type", ["companies", "contacts", "deals"]).notNull(), fieldKey: varchar("field_key", { length: 160 }).notNull(), canRead: int("can_read").notNull().default(0), canWrite: int("can_write").notNull().default(0), updatedAt: datetime("updated_at").notNull(),
+}, table => [uniqueIndex("demo_hubspot_policy_unique").on(table.role, table.objectType, table.fieldKey)]);
+
+export const demoHubspotVerificationAttempts = mysqlTable("demo_hubspot_verification_attempts", {
+  claimId: varchar("claim_id", { length: 96 }).primaryKey(), schemaVersion: varchar("schema_version", { length: 16 }).notNull(), submittedAt: datetime("submitted_at").notNull(), receivedAt: datetime("received_at").notNull(), slackTeamId: varchar("slack_team_id", { length: 64 }).notNull(), slackUserId: varchar("slack_user_id", { length: 120 }).notNull(), payload: json("payload").$type<Record<string, unknown>>().notNull(), status: mysqlEnum("status", ["pending", "verified", "unresolved", "ambiguous", "rejected"]).notNull(), result: json("result").$type<Record<string, unknown>>().notNull(), resolvedContactId: varchar("resolved_contact_id", { length: 64 }), createdAt: datetime("created_at").notNull(), updatedAt: datetime("updated_at").notNull(),
+}, table => [index("demo_hubspot_verification_slack_idx").on(table.slackTeamId, table.slackUserId, table.createdAt), index("demo_hubspot_verification_status_idx").on(table.status, table.updatedAt)]);
+
+export const demoHubspotWriteAudits = mysqlTable("demo_hubspot_write_audits", {
+  id: varchar("id", { length: 96 }).primaryKey(), actorUserId: varchar("actor_user_id", { length: 64 }), source: varchar("source", { length: 64 }).notNull(), objectType: varchar("object_type", { length: 32 }).notNull(), objectId: varchar("object_id", { length: 64 }).notNull(), fieldKey: varchar("field_key", { length: 160 }), oldValue: json("old_value").$type<unknown>(), newValue: json("new_value").$type<unknown>(), claimId: varchar("claim_id", { length: 96 }), reason: varchar("reason", { length: 255 }).notNull(), createdAt: datetime("created_at").notNull(),
+}, table => [index("demo_hubspot_audit_object_idx").on(table.objectType, table.objectId, table.createdAt), index("demo_hubspot_audit_claim_idx").on(table.claimId)]);
+
+export type DemoHubspotFieldDefinition = typeof demoHubspotFieldDefinitions.$inferSelect;
+export type DemoHubspotCompany = typeof demoHubspotCompanies.$inferSelect;
+export type DemoHubspotContact = typeof demoHubspotContacts.$inferSelect;
+export type DemoHubspotDeal = typeof demoHubspotDeals.$inferSelect;
+export type DemoHubspotVerificationAttempt = typeof demoHubspotVerificationAttempts.$inferSelect;
