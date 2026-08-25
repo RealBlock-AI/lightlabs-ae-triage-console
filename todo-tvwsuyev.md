@@ -15,7 +15,7 @@
 - [x] Add a visible HubSpot connection workflow and explain the production sync boundary.
 - [x] Add a visible LIMS connection workflow with clearly labeled dummy records and connection health state.
 - [x] Cover bridge, identity-write, HubSpot, and LIMS workflows with tests and visual verification.
-- [ ] Save and report the updated integration and alignment implementation.
+- [x] Save and report the updated integration and alignment implementation.
 - [x] Reconcile the artifact’s Slack acknowledgment-only boundary with the permissive bridge intake policy without enabling result values in Slack.
 - [x] Add an in-console topology and seven-gate demotion model that matches the accessible system-design artifact.
 - [x] Re-verify the artifact-aligned bridge, topology, and decision-gate interface in tests and visual review.
