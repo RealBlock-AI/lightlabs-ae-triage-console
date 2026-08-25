@@ -10,11 +10,13 @@ import { getKnowledgeDocument, getKnowledgeSection, listKnowledgeSources, refres
 import { addPendingContactMapping, beginHubSpotAuthorization, completeHubSpotCallbackUrl, getHubSpotConnectionStatus, listAccountsForContactMapping, listContactMappings, refreshHubSpotContactContext, searchHubSpotContactsByEmail, verifyAndMapContact, verifyHubSpotMcpConnection } from "./hubspot";
 import { approveMcpIdentityRequest, listInternalTeamMembers, listMcpIdentityRequests } from "./mcpIdentity";
 import { listIntegrationAudit } from "./integrationAudit";
+import { recordIntegrationAudit } from "./integrationAudit";
 import { listIngestPolicies, setIngestPolicy } from "./ingestPolicy";
 import { listExternalSlackIdentityCandidates } from "./externalIdentity";
 import { ensurePrototypeSeed } from "./prototypeSeed";
 import { createStructuredIntake, getPrototypeItem, getPrototypeQueue, runPrototypeTriage } from "./prototype";
 import { capacityMultiple } from "./domain";
+import { getLimsConnectionStatus } from "./lims";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -77,6 +79,14 @@ export const appRouter = router({
     verifyAndMapContact: adminProcedure.input(z.object({ contactId: z.string().min(1), hubspotContactId: z.string().regex(/^\d+$/) })).mutation(({ input, ctx }) => verifyAndMapContact({ ...input, verifiedByUserId: String(ctx.user.id) })),
     externalSlackCandidates: adminProcedure.query(() => listExternalSlackIdentityCandidates()),
   }),
+  identity: router({
+    writePending: adminProcedure.input(z.object({ accountId: z.string().min(1), name: z.string().min(2).max(160), email: z.string().email(), slackWorkspaceId: z.string().min(1).max(64), slackUserId: z.string().min(1).max(100) })).mutation(async ({ input, ctx }) => {
+      const identity = await addPendingContactMapping(input);
+      await recordIntegrationAudit({ surface: "bobby", eventType: "identity_write_staged", outcome: "accepted", statusCode: 201, slackWorkspaceId: input.slackWorkspaceId, slackUserId: input.slackUserId, metadata: { accountId: input.accountId, contactId: identity.id, writtenByUserId: ctx.user.id, verificationState: "pending_exact_hubspot_email" } });
+      return { ...identity, disposition: "pending_exact_hubspot_email" as const };
+    }),
+  }),
+  lims: router({ status: publicProcedure.query(() => getLimsConnectionStatus()) }),
   mcpAccess: router({
     pendingIdentities: adminProcedure.query(() => listMcpIdentityRequests()),
     teamMembers: adminProcedure.query(() => listInternalTeamMembers()),
@@ -85,7 +95,11 @@ export const appRouter = router({
   integrationAudit: router({ recent: adminProcedure.input(z.object({ surface: z.enum(["mcp", "slack_ingest"]).optional() }).optional()).query(({ input }) => listIntegrationAudit(input?.surface)) }),
   ingestPolicies: router({
     list: adminProcedure.query(() => listIngestPolicies()),
-    set: adminProcedure.input(z.object({ workspaceId: z.string().min(1).max(64), channelId: z.string().min(1).max(100), authoritativeTransport: z.enum(["native_slack", "custom_bridge", "disabled"]), enabled: z.boolean() })).mutation(({ input }) => setIngestPolicy(input)),
+    set: adminProcedure.input(z.object({ workspaceId: z.string().min(1).max(64), channelId: z.string().min(1).max(100), authoritativeTransport: z.enum(["native_slack", "custom_bridge", "disabled"]), enabled: z.boolean() })).mutation(async ({ input, ctx }) => {
+      const policy = await setIngestPolicy(input);
+      await recordIntegrationAudit({ surface: "slack_ingest", eventType: "bridge_policy_saved", outcome: "accepted", statusCode: 200, slackWorkspaceId: input.workspaceId, metadata: { channelId: input.channelId, authoritativeTransport: input.authoritativeTransport, enabled: input.enabled, writtenByUserId: ctx.user.id } });
+      return policy;
+    }),
   }),
 });
 

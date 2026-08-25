@@ -26,6 +26,7 @@ export function bobbyHealth(req: Request, res: Response) {
 
 type BobbyRequest = { request_id: string; schema_version: string; requested_at: string; customer: { slack_user_id: string; slack_team_id: string; is_external?: boolean }; conversation: { channel_id: string; channel_type: "channel" | "im" | "group" | "mpim"; thread_ts?: string; messages: Array<{ ts: string; user_id: string; role: string; text: string; files?: Array<{ name?: string; mimetype?: string }> }> }; analysis?: { question?: string; urgency?: string } };
 type BobbyResponseStatus = "answered" | "needs_more_info" | "escalate" | "no_match";
+const SLACK_ACKNOWLEDGMENT = "Thanks — your request has been received by Light Labs. An account executive will follow up through the appropriate channel.";
 
 function parsedRequest(input: unknown): BobbyRequest | undefined {
   const body = input as Record<string, unknown>; const customer = body?.customer as Record<string, unknown> | undefined; const conversation = body?.conversation as Record<string, unknown> | undefined; const messages = conversation?.messages;
@@ -36,8 +37,8 @@ function parsedRequest(input: unknown): BobbyRequest | undefined {
   return { request_id: body.request_id, schema_version: body.schema_version, requested_at: body.requested_at, customer: { slack_user_id: customer.slack_user_id, slack_team_id: customer.slack_team_id, is_external: customer.is_external === true }, conversation: { channel_id: conversation.channel_id, channel_type: conversation.channel_type as BobbyRequest["conversation"]["channel_type"], thread_ts: typeof conversation.thread_ts === "string" ? conversation.thread_ts : undefined, messages: safeMessages }, analysis: typeof body.analysis === "object" && body.analysis ? { question: typeof (body.analysis as Record<string, unknown>).question === "string" ? (body.analysis as Record<string, unknown>).question as string : undefined, urgency: typeof (body.analysis as Record<string, unknown>).urgency === "string" ? (body.analysis as Record<string, unknown>).urgency as string : undefined } : undefined };
 }
 
-function safeResponse(requestId: string, status: BobbyResponseStatus, reasons: string[], suggestedReply: string, interactionId: string | null = null) {
-  return { request_id: requestId, status, answer_markdown: null, confidence: null, sources: [], suggested_reply: suggestedReply, follow_up_questions: status === "needs_more_info" ? ["Please share the relevant Light Labs order, lot, or product name so the team can locate the right record."] : [], ticket: { created: false, id: null, url: null }, policy: { verified_to_reply: false, reasons }, interaction_id: interactionId };
+function safeResponse(requestId: string, status: BobbyResponseStatus, reasons: string[], interactionId: string | null = null) {
+  return { request_id: requestId, status, answer_markdown: null, confidence: null, sources: [], suggested_reply: SLACK_ACKNOWLEDGMENT, follow_up_questions: [], ticket: { created: false, id: null, url: null }, policy: { verified_to_reply: false, slack_output: "fixed_acknowledgment_only", reasons }, interaction_id: interactionId };
 }
 
 export async function resolveBobbySupportRequest(input: BobbyRequest) {
@@ -46,14 +47,14 @@ export async function resolveBobbySupportRequest(input: BobbyRequest) {
   if (existing) return { duplicate: true, response: existing.response };
   const identity = (await db.select({ identity: contactIdentities, contact: contacts }).from(contactIdentities).innerJoin(contacts, eq(contactIdentities.contactId, contacts.id)).where(and(eq(contactIdentities.provider, "slack"), eq(contactIdentities.tenantId, input.customer.slack_team_id), eq(contactIdentities.externalId, input.customer.slack_user_id), eq(contactIdentities.verificationStatus, "verified"))).limit(1))[0];
   let status: BobbyResponseStatus; let response: Record<string, unknown>; let interactionId: string | null = null;
-  if (!identity) { status = "no_match"; response = safeResponse(input.request_id, status, ["No verified Light Labs contact mapping exists for this Slack identity."], "Thanks — I’ve routed this to the Light Labs team so we can verify the account context."); }
+  if (!identity) { status = "no_match"; response = safeResponse(input.request_id, status, ["No verified Light Labs contact mapping exists for this Slack identity."]); }
   else {
     const snapshot = (await db.select().from(hubspotContextSnapshots).where(and(eq(hubspotContextSnapshots.contactId, identity.contact.id), eq(hubspotContextSnapshots.status, "available"), gt(hubspotContextSnapshots.retrievedAt, new Date(Date.now() - 24 * 60 * 60 * 1000)))).orderBy(desc(hubspotContextSnapshots.retrievedAt)).limit(1))[0];
     const lastText = input.conversation.messages.at(-1)?.text ?? "";
     const triage = await runPrototypeTriage({ source: "bobby", channelRef: `bobby|${input.conversation.channel_id}|${input.request_id}`, externalEventId: input.request_id, slackUserId: input.customer.slack_user_id, slackWorkspaceId: input.customer.slack_team_id, rawText: lastText, attachmentsPresent: input.conversation.messages.some(message => Boolean(message.files?.length)) }); interactionId = triage.interaction.id;
-    if (!snapshot) { status = "escalate"; response = safeResponse(input.request_id, status, ["The verified contact does not have a fresh approved CRM context snapshot."], "Thanks — I’ve routed this to the Light Labs team for review.", interactionId); }
-    else if (lastText.trim().length < 3) { status = "needs_more_info"; response = safeResponse(input.request_id, status, ["The customer message did not contain enough detail to identify a safe support request."], "I can help route this. Please share the relevant order, lot, or product name.", interactionId); }
-    else { status = "escalate"; response = safeResponse(input.request_id, status, ["No versioned customer-response template has been approved for this support request.", "Classification and retrieval signals are non-dispositive."], "Thanks — I’ve routed this to the Light Labs team for review.", interactionId); }
+    if (!snapshot) { status = "escalate"; response = safeResponse(input.request_id, status, ["The verified contact does not have a fresh approved CRM context snapshot."], interactionId); }
+    else if (lastText.trim().length < 3) { status = "needs_more_info"; response = safeResponse(input.request_id, status, ["The customer message did not contain enough detail to identify a safe support request."], interactionId); }
+    else { status = "escalate"; response = safeResponse(input.request_id, status, ["No versioned customer-response template has been approved for this support request.", "Classification and retrieval signals are non-dispositive."], interactionId); }
   }
   await db.insert(bobbySupportRequests).values({ requestId: input.request_id, schemaVersion: input.schema_version, slackWorkspaceId: input.customer.slack_team_id, slackUserId: input.customer.slack_user_id, interactionId, status, response, createdAt: new Date(), updatedAt: new Date() });
   return { duplicate: false, response };

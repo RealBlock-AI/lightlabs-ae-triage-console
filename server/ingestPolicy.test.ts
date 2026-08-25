@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { evaluateIngestPolicy, setIngestPolicy } from "./ingestPolicy";
 
 describe("authoritative channel ingestion policy", () => {
-  it("allows legacy native Slack events by default but requires an explicit policy for a custom bridge", async () => {
+  it("allows native Slack and authenticated custom-bridge events by default", async () => {
     const workspaceId = `T_POLICY_${Date.now()}`;
     expect(await evaluateIngestPolicy({ workspaceId, channelId: "C_DEFAULT", transport: "native_slack" })).toMatchObject({ allowed: true, reason: "native_default" });
-    expect(await evaluateIngestPolicy({ workspaceId, channelId: "C_DEFAULT", transport: "custom_bridge" })).toMatchObject({ allowed: false, reason: "bridge_requires_explicit_policy" });
+    expect(await evaluateIngestPolicy({ workspaceId, channelId: "C_DEFAULT", transport: "custom_bridge" })).toMatchObject({ allowed: true, reason: "bridge_permissive_default" });
   });
 
   it("permits only the selected authoritative transport and fails closed for the other path", async () => {

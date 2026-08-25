@@ -9,3 +9,13 @@
 - [x] Add the structured internal intake workflow, interaction audit details, citations, refusal states, and non-circular capacity controls.
 - [x] Cover domain, permissions, policy, evidence, triage, knowledge, UI, and evaluator probes with Vitest and visual checks.
 - [x] Save a verified checkpoint and report the implementation, migration, probe results, and any blocked exceptions.
+- [x] Inspect the provided Claude artifact and document visual or workflow alignment differences from the deployed console.
+- [x] Enable a permissive bridge policy with explicit channel-level state, audit records, and a visible safety notice.
+- [x] Add an audited identity-write tool with validated input, immutable identity scope, and confirmation feedback.
+- [x] Add a visible HubSpot connection workflow and explain the production sync boundary.
+- [x] Add a visible LIMS connection workflow with clearly labeled dummy records and connection health state.
+- [x] Cover bridge, identity-write, HubSpot, and LIMS workflows with tests and visual verification.
+- [ ] Save and report the updated integration and alignment implementation.
+- [x] Reconcile the artifact’s Slack acknowledgment-only boundary with the permissive bridge intake policy without enabling result values in Slack.
+- [x] Add an in-console topology and seven-gate demotion model that matches the accessible system-design artifact.
+- [x] Re-verify the artifact-aligned bridge, topology, and decision-gate interface in tests and visual review.

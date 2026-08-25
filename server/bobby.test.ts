@@ -30,7 +30,7 @@ describe("Bobby support-resolution MCP", () => {
     const retry = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "resolve_support_request", arguments: request } }) });
     const firstPayload = await first.json(); const retryPayload = await retry.json();
     const firstResult = JSON.parse(firstPayload.result.content[0].text); const retryResult = JSON.parse(retryPayload.result.content[0].text);
-    expect(firstResult).toMatchObject({ request_id: requestId, status: "no_match", answer_markdown: null, sources: [], policy: { verified_to_reply: false } });
+    expect(firstResult).toMatchObject({ request_id: requestId, status: "no_match", answer_markdown: null, sources: [], suggested_reply: "Thanks — your request has been received by Light Labs. An account executive will follow up through the appropriate channel.", follow_up_questions: [], policy: { verified_to_reply: false, slack_output: "fixed_acknowledgment_only" } });
     expect(retryResult).toEqual(firstResult);
     const db = await getDb(); const persisted = await db!.select().from(bobbySupportRequests).where(eq(bobbySupportRequests.requestId, requestId));
     expect(persisted).toHaveLength(1); expect(JSON.stringify(persisted[0]?.response)).not.toContain("must-not-persist");
@@ -61,12 +61,12 @@ describe("Bobby support-resolution MCP", () => {
     expect(payload).toMatchObject({ status: "escalate", answer_markdown: null, policy: { verified_to_reply: false } }); expect(payload.policy.reasons.join(" ")).toMatch(/fresh approved CRM context/i);
   });
 
-  it("asks for clarification when a verified mapped sender has fresh context but no identifying request detail", async () => {
+  it("keeps a fixed acknowledgment when a verified mapped sender lacks identifying request detail", async () => {
     const db = await getDb(); await db!.insert(hubspotContextSnapshots).values({ id: `hctx_bobby_${Date.now()}`, contactId: "con_northwind_ops", hubspotContactId: "123", sourceObjectIds: ["123"], context: { contact: { properties: { email: "priya@example.com" } } }, retrievedAt: new Date(), status: "available", errorCode: null });
     const request = { request_id: `${requestId}_needs_info`, schema_version: "0.1", requested_at: new Date().toISOString(), customer: { slack_user_id: "U_NORTH_OPS", slack_team_id: "T_DEMO", is_external: true }, conversation: { channel_id: "D_BOBBY_MAPPED", channel_type: "im", messages: [{ ts: "1710000002.000001", user_id: "U_NORTH_OPS", role: "customer", text: "?" }] } };
     const result = await fetch(`${baseUrl}/integrations/bobby/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "resolve_support_request", arguments: request } }) });
     const payload = JSON.parse((await result.json()).result.content[0].text);
-    expect(payload).toMatchObject({ status: "needs_more_info", answer_markdown: null, policy: { verified_to_reply: false } }); expect(payload.follow_up_questions).toHaveLength(1);
+    expect(payload).toMatchObject({ status: "needs_more_info", answer_markdown: null, suggested_reply: "Thanks — your request has been received by Light Labs. An account executive will follow up through the appropriate channel.", follow_up_questions: [], policy: { verified_to_reply: false, slack_output: "fixed_acknowledgment_only" } });
   });
 
   it("keeps an otherwise verified and detailed request in escalate until a versioned approved response template exists", async () => {

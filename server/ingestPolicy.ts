@@ -11,7 +11,7 @@ export async function evaluateIngestPolicy(input: { workspaceId: string | null; 
   if (!input.workspaceId) return input.transport === "native_slack" ? { allowed: true as const, reason: "native_without_workspace_policy" } : { allowed: false as const, reason: "bridge_requires_workspace_policy" };
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const policy = (await db.select().from(ingestChannelPolicies).where(and(eq(ingestChannelPolicies.slackWorkspaceId, input.workspaceId), eq(ingestChannelPolicies.channelId, input.channelId))).limit(1))[0];
-  if (!policy) return input.transport === "native_slack" ? { allowed: true as const, reason: "native_default" } : { allowed: false as const, reason: "bridge_requires_explicit_policy" };
+  if (!policy) return input.transport === "native_slack" ? { allowed: true as const, reason: "native_default" } : { allowed: true as const, reason: "bridge_permissive_default" };
   if (!policy.enabled || policy.authoritativeTransport === "disabled") return { allowed: false as const, reason: "channel_disabled" };
   if (policy.authoritativeTransport !== input.transport) return { allowed: false as const, reason: `authoritative_${policy.authoritativeTransport}` };
   return { allowed: true as const, reason: "authoritative_transport" };
@@ -19,7 +19,7 @@ export async function evaluateIngestPolicy(input: { workspaceId: string | null; 
 
 export async function listIngestPolicies() {
   const db = await getDb(); if (!db) return [];
-  return db.select().from(ingestChannelPolicies).orderBy(ingestChannelPolicies.slackWorkspaceId, ingestChannelPolicies.channelId);
+  return db.select().from(ingestChannelPolicies).orderBy(ingestChannelPolicies.updatedAt).limit(20);
 }
 
 export async function setIngestPolicy(input: { workspaceId: string; channelId: string; authoritativeTransport: AuthoritativeTransport; enabled: boolean }) {
