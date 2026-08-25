@@ -1,0 +1,1 @@
+ALTER TABLE `demo_hubspot_field_definitions` MODIFY COLUMN `definition` mediumtext NOT NULL;

@@ -18,6 +18,8 @@ import { createStructuredIntake, getPrototypeItem, getPrototypeQueue, runPrototy
 import { capacityMultiple } from "./domain";
 import { getLimsConnectionStatus } from "./lims";
 import { DEMO_FIELDS, demoStatus, filterDemoProperties, getBySlackIdentity, getDemoAccount, getDemoContact, getVerificationClaim, listDemoCompanies, listDemoContacts, listDemoDeals, listDemoFields, listDemoPolicies, previewVerification, seedDemoHubSpot, updateDemoContactField, upsertDemoRecord, verifyClaim, type VerificationClaim } from "./demoHubspot";
+import { getOwnerPortfolio, listOwnerPortfolios, seedOwnerPortfolios } from "./portfolioService";
+import { listSupportFields, listTestingPlatformFields } from "./referenceCatalog";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
@@ -59,6 +61,14 @@ export const appRouter = router({
       return createStructuredIntake({ ...input, requestingUserId: requester });
     }),
     capacity: publicProcedure.input(z.object({ n: z.number().min(.01).max(.95), d: z.number().min(0).max(.99), t: z.number().min(1).max(20) })).query(({ input }) => ({ formula: "1 / (n + (1 − n) × (1 − d) / T)", multiple: capacityMultiple(input.n, input.d, input.t), ceiling: 1 / input.n, points: [1, 2, 3, 4, 5, 6, 7, 8].map(t => ({ t, value: capacityMultiple(input.n, input.d, t) })) })),
+  }),
+  portfolio: router({
+    bootstrap: publicProcedure.mutation(async () => { await seedOwnerPortfolios(); await seedDemoHubSpot(); return { success: true }; }),
+    owners: publicProcedure.query(() => listOwnerPortfolios()),
+    detail: publicProcedure.input(z.object({ ownerId: z.string().min(1) })).query(({ input }) => getOwnerPortfolio(input.ownerId)),
+  }),
+  referenceCatalog: router({
+    fields: publicProcedure.query(async () => { await seedDemoHubSpot(); return { hubspot: await listDemoFields(), platform: await listTestingPlatformFields(), support: await listSupportFields() }; }),
   }),
   knowledge: router({
     sources: publicProcedure.query(() => listKnowledgeSources()),
