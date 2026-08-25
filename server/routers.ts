@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nanoid } from "nanoid";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -11,10 +12,14 @@ import { approveMcpIdentityRequest, listInternalTeamMembers, listMcpIdentityRequ
 import { listIntegrationAudit } from "./integrationAudit";
 import { listIngestPolicies, setIngestPolicy } from "./ingestPolicy";
 import { listExternalSlackIdentityCandidates } from "./externalIdentity";
+import { ensurePrototypeSeed } from "./prototypeSeed";
+import { createStructuredIntake, getPrototypeItem, getPrototypeQueue, runPrototypeTriage } from "./prototype";
+import { capacityMultiple } from "./domain";
 
 const viewerSchema = z.enum(["usr_sarah", "usr_marcus", "usr_admin"]);
 const laneSchema = z.enum(["auto", "assisted", "escalate"]);
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => { if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Administrator access is required." }); return next(); });
+const retiredLegacyTriage = () => ({ retired: true, message: "The legacy fixture triage API is retired. Use the canonical prototype API." }) as any;
 
 export const appRouter = router({
   system: systemRouter,
@@ -26,15 +31,31 @@ export const appRouter = router({
     }),
   }),
   triage: router({
-    bootstrap: publicProcedure.mutation(async () => { await ensureDemoData(); return { success: true }; }),
-    fixtures: publicProcedure.query(() => APPENDIX_A.map(({ id, text, classification }) => ({ id, text, lane: classification.intents.includes("ORDER_STATUS") || classification.intents.includes("OPS_SHIPPING") || classification.intents.includes("OPS_DATA_EXPORT") ? "auto" : classification.intents.includes("ASSAY_SCOPE_QUESTION") ? "assisted" : "escalate" }))),
-    queue: publicProcedure.input(z.object({ viewerId: viewerSchema, lane: laneSchema.optional() })).query(({ input }) => getQueue(input.viewerId, input.lane)),
-    item: publicProcedure.input(z.object({ id: z.string().min(1), viewerId: viewerSchema })).query(async ({ input }) => ({ item: await getItemForViewer(input.id, input.viewerId) ?? null })),
-    runFixture: publicProcedure.input(z.object({ fixtureId: z.number().int().min(1).max(8) })).mutation(({ input }) => runFixture(input.fixtureId)),
-    send: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema, sentText: z.string().min(1), overrideReason: z.string().optional(), reviewed: z.boolean().optional() })).mutation(({ input }) => recordSend(input)),
-    clarify: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema, question: z.string().min(1) })).mutation(({ input }) => requestClarification(input.interactionId, input.viewerId, input.question)),
-    resolve: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema })).mutation(({ input }) => resolveItem(input.interactionId, input.viewerId)),
-    capacity: publicProcedure.query(() => capacity()),
+    bootstrap: publicProcedure.mutation(retiredLegacyTriage),
+    fixtures: publicProcedure.query(retiredLegacyTriage),
+    queue: publicProcedure.input(z.object({ viewerId: viewerSchema, lane: laneSchema.optional() })).query(retiredLegacyTriage),
+    item: publicProcedure.input(z.object({ id: z.string().min(1), viewerId: viewerSchema })).query(retiredLegacyTriage),
+    runFixture: publicProcedure.input(z.object({ fixtureId: z.number().int().min(1).max(8) })).mutation(retiredLegacyTriage),
+    send: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema, sentText: z.string().min(1), overrideReason: z.string().optional(), reviewed: z.boolean().optional() })).mutation(retiredLegacyTriage),
+    clarify: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema, question: z.string().min(1) })).mutation(retiredLegacyTriage),
+    resolve: publicProcedure.input(z.object({ interactionId: z.string(), viewerId: viewerSchema })).mutation(retiredLegacyTriage),
+    capacity: publicProcedure.query(retiredLegacyTriage),
+  }),
+  prototype: router({
+    bootstrap: publicProcedure.mutation(async () => { await ensurePrototypeSeed(); return { success: true }; }),
+    queue: publicProcedure.query(() => getPrototypeQueue()),
+    item: publicProcedure.input(z.object({ id: z.string().min(1) })).query(({ input }) => getPrototypeItem(input.id)),
+    run: publicProcedure.input(z.object({ userId: z.enum(["northwind", "lumen", "coman", "denied"]), text: z.string().min(3).max(4000), attachmentsPresent: z.boolean().optional() })).mutation(async ({ input }) => {
+      await ensurePrototypeSeed();
+      const identity = { northwind: "U_NORTH_OPS", lumen: "U_LUMEN_QA", coman: "U_PINE_QC", denied: "U_DENIED" }[input.userId];
+      return runPrototypeTriage({ source: "prototype_console", channelRef: `console|${Date.now()}`, externalEventId: `console|${nanoid()}`, slackUserId: identity, slackWorkspaceId: "T_DEMO", rawText: input.text, attachmentsPresent: input.attachmentsPresent });
+    }),
+    intake: publicProcedure.input(z.object({ userId: z.enum(["northwind", "lumen", "coman", "denied"]), companyId: z.string().min(1), productName: z.string().min(2).max(200), skuCode: z.string().min(2).max(120), category: z.string().min(2).max(100), availableSampleGrams: z.number().positive().optional(), analyteName: z.string().min(2).max(160), limitValue: z.number().positive().optional(), limitUnit: z.string().min(1).max(32).optional(), limitBasis: z.enum(["per_serving", "per_kg", "per_capsule", "per_100g"]).optional(), source: z.string().min(2).max(200) })).mutation(async ({ input }) => {
+      await ensurePrototypeSeed();
+      const requester = { northwind: 9001, lumen: 9002, coman: 9003, denied: 9004 }[input.userId];
+      return createStructuredIntake({ ...input, requestingUserId: requester });
+    }),
+    capacity: publicProcedure.input(z.object({ n: z.number().min(.01).max(.95), d: z.number().min(0).max(.99), t: z.number().min(1).max(20) })).query(({ input }) => ({ formula: "1 / (n + (1 − n) × (1 − d) / T)", multiple: capacityMultiple(input.n, input.d, input.t), ceiling: 1 / input.n, points: [1, 2, 3, 4, 5, 6, 7, 8].map(t => ({ t, value: capacityMultiple(input.n, input.d, t) })) })),
   }),
   knowledge: router({
     sources: publicProcedure.query(() => listKnowledgeSources()),

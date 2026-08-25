@@ -1,9 +1,9 @@
-import { Activity, BarChart3, BookOpenText, PlugZap, ShieldCheck, UsersRound, Waypoints } from "lucide-react";
+import { Activity, BarChart3, ClipboardPenLine, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
-  const items = [{ icon: Activity, label: "AE Queue", path: "/" }, { icon: PlugZap, label: "HubSpot", path: "/integrations/hubspot" }, { icon: UsersRound, label: "Contact Mapping", path: "/integrations/mapping" }, { icon: Waypoints, label: "Slack Connections", path: "/connections/slack" }, { icon: BookOpenText, label: "Knowledge", path: "/knowledge" }, { icon: BarChart3, label: "Capacity", path: "/capacity" }];
+  const items = [{ icon: Activity, label: "Canonical Queue", path: "/" }, { icon: ClipboardPenLine, label: "Intake", path: "/intake" }, { icon: BarChart3, label: "Capacity", path: "/capacity" }];
   return <div className="min-h-screen bg-[#f6f7f1] text-[#13261f] md:grid md:grid-cols-[236px_1fr]">
     <aside className="border-b border-[#d6ded7] bg-[#103326] px-4 py-5 text-[#eff8f1] md:min-h-screen md:border-b-0 md:border-r">
       <button onClick={() => setLocation("/")} className="flex items-center gap-3 text-left"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#9ee3bd] text-[#103326]"><ShieldCheck size={20}/></span><span><span className="block text-[11px] font-black tracking-[0.18em] text-[#9ee3bd]">LIGHT LABS</span><span className="block text-sm font-semibold">AE TRIAGE CONSOLE</span></span></button>

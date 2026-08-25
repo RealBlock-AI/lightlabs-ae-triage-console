@@ -6,7 +6,7 @@ import { getDb } from "./db";
 import { getContactBySlackUser } from "./externalIdentity";
 import { recordIntegrationAudit } from "./integrationAudit";
 import { retrieveKnowledge } from "./knowledge";
-import { runTriage } from "./triage";
+import { runPrototypeTriage } from "./prototype";
 
 function secretMatches(provided: string | undefined) {
   const expected = process.env.BOBBY_MCP_TOKEN;
@@ -50,7 +50,7 @@ export async function resolveBobbySupportRequest(input: BobbyRequest) {
   else {
     const snapshot = (await db.select().from(hubspotContextSnapshots).where(and(eq(hubspotContextSnapshots.contactId, identity.contact.id), eq(hubspotContextSnapshots.status, "available"), gt(hubspotContextSnapshots.retrievedAt, new Date(Date.now() - 24 * 60 * 60 * 1000)))).orderBy(desc(hubspotContextSnapshots.retrievedAt)).limit(1))[0];
     const lastText = input.conversation.messages.at(-1)?.text ?? "";
-    const triage = await runTriage({ source: "bobby", channelRef: `bobby|${input.conversation.channel_id}|${input.request_id}`, externalEventId: input.request_id, sourceSchemaVersion: `bobby-support-${input.schema_version}`, threadRef: input.conversation.thread_ts ?? null, sourceReceivedAt: new Date(input.requested_at), slackUserId: input.customer.slack_user_id, slackWorkspaceId: input.customer.slack_team_id, rawText: lastText }); interactionId = triage.interaction.id;
+    const triage = await runPrototypeTriage({ source: "bobby", channelRef: `bobby|${input.conversation.channel_id}|${input.request_id}`, externalEventId: input.request_id, slackUserId: input.customer.slack_user_id, slackWorkspaceId: input.customer.slack_team_id, rawText: lastText, attachmentsPresent: input.conversation.messages.some(message => Boolean(message.files?.length)) }); interactionId = triage.interaction.id;
     if (!snapshot) { status = "escalate"; response = safeResponse(input.request_id, status, ["The verified contact does not have a fresh approved CRM context snapshot."], "Thanks — I’ve routed this to the Light Labs team for review.", interactionId); }
     else if (lastText.trim().length < 3) { status = "needs_more_info"; response = safeResponse(input.request_id, status, ["The customer message did not contain enough detail to identify a safe support request."], "I can help route this. Please share the relevant order, lot, or product name.", interactionId); }
     else { status = "escalate"; response = safeResponse(input.request_id, status, ["No versioned customer-response template has been approved for this support request.", "Classification and retrieval signals are non-dispositive."], "Thanks — I’ve routed this to the Light Labs team for review.", interactionId); }

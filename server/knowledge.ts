@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
@@ -50,6 +50,8 @@ export async function indexKnowledgeDocument(input: { sourceId: string; content:
   const source = (await db.select().from(knowledgeSources).where(eq(knowledgeSources.id, input.sourceId)).limit(1))[0]; if (!source) throw new Error("Knowledge source is not in the approved catalog.");
   const content = input.content.trim(); if (content.length < 80) throw new Error("Knowledge document is too short to index safely.");
   const hash = createHash("sha256").update(content).digest("hex"); const capturedAt = input.fetchedAt ?? now(); const discoveredSections = sectionIndexFor(content); const candidateSections = discoveredSections.length ? discoveredSections : [{ heading: "Overview", anchor: "overview", excerpt: content.replace(/\s+/g, " ").slice(0, 500) }]; const anchorCounts = new Map<string, number>(); const sections = candidateSections.map(section => { const baseAnchor = section.anchor || "overview"; const count = (anchorCounts.get(baseAnchor) ?? 0) + 1; anchorCounts.set(baseAnchor, count); return { ...section, anchor: count === 1 ? baseAnchor : `${baseAnchor}-${count}` }; }); const summaryYaml = summaryFor(source, content);
+  const priorDocuments = await db.select({ id: knowledgeDocuments.id }).from(knowledgeDocuments).where(eq(knowledgeDocuments.sourceId, source.id));
+  if (priorDocuments.length) await db.delete(knowledgeSections).where(inArray(knowledgeSections.documentId, priorDocuments.map(document => document.id)));
   await db.update(knowledgeDocuments).set({ status: "superseded" }).where(and(eq(knowledgeDocuments.sourceId, source.id), eq(knowledgeDocuments.status, "indexed")));
   await db.insert(knowledgeDocuments).values({ id: `kd_${nanoid(18)}`, sourceId: source.id, content, markdownContent: content, contentFormat: "markdown", parserVersion: "main-content-markdown-v1", summaryYaml, sectionIndex: sections, contentHash: hash, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" }).onDuplicateKeyUpdate({ set: { content, markdownContent: content, contentFormat: "markdown", parserVersion: "main-content-markdown-v1", summaryYaml, sectionIndex: sections, fetchedAt: capturedAt, indexedAt: now(), status: "indexed" } });
   const document = (await db.select({ id: knowledgeDocuments.id }).from(knowledgeDocuments).where(and(eq(knowledgeDocuments.sourceId, source.id), eq(knowledgeDocuments.contentHash, hash))).limit(1))[0];

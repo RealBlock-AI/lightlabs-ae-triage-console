@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { recordIntegrationAudit } from "./integrationAudit";
 import { captureExternalSlackIdentityCandidate } from "./externalIdentity";
-import { runTriage } from "./triage";
+import { runPrototypeTriage } from "./prototype";
 import { evaluateIngestPolicy } from "./ingestPolicy";
 
 function secretMatches(provided: string | undefined) {
@@ -59,7 +59,7 @@ export async function customBotIngest(req: Request, res: Response) {
   const policy = await evaluateIngestPolicy({ workspaceId: event.workspace_id, channelId: event.channel_id, transport: "custom_bridge" });
   if (!policy.allowed) { await recordIntegrationAudit({ surface: "slack_ingest", eventType: `custom_bot:${event.event_type}`, outcome: "accepted", statusCode: 202, slackWorkspaceId: event.workspace_id, slackUserId: event.slack_user_id, metadata: { transport: "custom_bridge", channelId: event.channel_id, channelType: event.channel_type, externalEventId: event.external_event_id, externallySharedChannel: event.is_externally_shared_channel, externalCustomerSignal: event.is_external || event.is_externally_shared_channel, skipped: true, policyReason: policy.reason } }); return res.status(202).json({ ok: true, skipped: true, reason: policy.reason, workspace_id: event.workspace_id, channel_id: event.channel_id }); }
   try {
-    const result = await runTriage({ source: "custom_slack_bot", channelRef: `custom|${event.workspace_id}|${event.external_event_id}`, externalEventId: event.external_event_id, sourceSchemaVersion: "custom-bot-v0.1", threadRef: event.thread_ts ?? null, sourceReceivedAt: new Date(event.received_at), slackUserId: event.slack_user_id, slackWorkspaceId: event.workspace_id, rawText: event.text });
+    const result = await runPrototypeTriage({ source: "custom_slack_bot", channelRef: `custom|${event.workspace_id}|${event.external_event_id}`, externalEventId: event.external_event_id, slackUserId: event.slack_user_id, slackWorkspaceId: event.workspace_id, rawText: event.text });
     const externalCustomerSignal = event.is_external || event.is_externally_shared_channel;
     const candidate = externalCustomerSignal ? await captureExternalSlackIdentityCandidate({ workspaceId: event.workspace_id, slackUserId: event.slack_user_id, channelId: event.channel_id, channelType: event.channel_type, externallySharedChannel: event.is_externally_shared_channel, sourceTransport: "custom_bridge", interactionId: result.interaction.id }) : null;
     await recordIntegrationAudit({ surface: "slack_ingest", eventType: `custom_bot:${event.event_type}`, outcome: "accepted", statusCode: 200, slackWorkspaceId: event.workspace_id, slackUserId: event.slack_user_id, interactionId: result.interaction.id, metadata: { transport: "custom_bridge", channelId: event.channel_id, channelType: event.channel_type, externalEventId: event.external_event_id, externallySharedChannel: event.is_externally_shared_channel, externalCustomerSignal, candidateStatus: candidate?.status ?? "not_captured", duplicate: result.duplicate, hasThread: Boolean(event.thread_ts) } });

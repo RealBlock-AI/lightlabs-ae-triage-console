@@ -1,0 +1,56 @@
+ALTER TABLE `interactions` ADD `requesting_user_id` int;--> statement-breakpoint
+ALTER TABLE `interactions` ADD `company_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `interactions` ADD `knowledge_citations` json;--> statement-breakpoint
+ALTER TABLE `interactions` ADD `domain_computations` json;--> statement-breakpoint
+ALTER TABLE `interactions` ADD `resolved_facts` json;--> statement-breakpoint
+ALTER TABLE `interactions` ADD `attachments_present` int DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `orders` ADD `company_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `orders` ADD `lims_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `orders` ADD `payment_status` varchar(64);--> statement-breakpoint
+ALTER TABLE `orders` ADD `orderer_id` int;--> statement-breakpoint
+ALTER TABLE `orders` ADD `ordered_at` datetime;--> statement-breakpoint
+ALTER TABLE `orders` ADD `date_received` datetime;--> statement-breakpoint
+ALTER TABLE `orders` ADD `purchase_order_number` varchar(120);--> statement-breakpoint
+ALTER TABLE `orders` ADD `created_at` datetime;--> statement-breakpoint
+ALTER TABLE `orders` ADD `updated_at` datetime;--> statement-breakpoint
+ALTER TABLE `orders` ADD `archived_at` datetime;--> statement-breakpoint
+ALTER TABLE `products` ADD `company_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `brand` varchar(160);--> statement-breakpoint
+ALTER TABLE `products` ADD `product_type` enum('finished_good','raw_material','research_and_development','industry_benchmarking');--> statement-breakpoint
+ALTER TABLE `products` ADD `shelf_life` varchar(120);--> statement-breakpoint
+ALTER TABLE `products` ADD `lims_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `created_at` datetime;--> statement-breakpoint
+ALTER TABLE `products` ADD `updated_at` datetime;--> statement-breakpoint
+ALTER TABLE `products` ADD `archived_at` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `sample_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `assay_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `turnaround_time_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `retest_of_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `stability_study_time_point_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `qbench_state` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `spec_status` enum('no_spec','in_spec','out_spec') DEFAULT 'no_spec';--> statement-breakpoint
+ALTER TABLE `tests` ADD `start_date` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `complete_date` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `estimated_start_date` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `estimated_complete_date` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `published_at` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `price` decimal(12,2);--> statement-breakpoint
+ALTER TABLE `tests` ADD `notes` text;--> statement-breakpoint
+ALTER TABLE `tests` ADD `laboratory_notes` text;--> statement-breakpoint
+ALTER TABLE `tests` ADD `result_recipient_emails` json;--> statement-breakpoint
+ALTER TABLE `tests` ADD `lims_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `tests` ADD `created_at` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `updated_at` datetime;--> statement-breakpoint
+ALTER TABLE `tests` ADD `archived_at` datetime;--> statement-breakpoint
+ALTER TABLE `users` ADD `first_name` varchar(120);--> statement-breakpoint
+ALTER TABLE `users` ADD `last_name` varchar(120);--> statement-breakpoint
+ALTER TABLE `users` ADD `staffuser` int DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `users` ADD `confirmed_at` datetime;--> statement-breakpoint
+ALTER TABLE `users` ADD `slack_workspace_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `users` ADD `slack_user_id` varchar(100);--> statement-breakpoint
+ALTER TABLE `users` ADD `hubspot_contact_id` varchar(64);--> statement-breakpoint
+ALTER TABLE `users` ADD `lims_id` varchar(64);--> statement-breakpoint
+CREATE INDEX `orders_company_idx` ON `orders` (`company_id`);--> statement-breakpoint
+CREATE INDEX `products_company_idx` ON `products` (`company_id`);--> statement-breakpoint
+CREATE INDEX `tests_sample_idx` ON `tests` (`sample_id`);--> statement-breakpoint
+CREATE INDEX `tests_assay_idx` ON `tests` (`assay_id`);
