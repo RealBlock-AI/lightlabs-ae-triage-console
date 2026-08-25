@@ -10,7 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { teamMembers } from "../../drizzle/schema";
+import { teamMembers, users } from "../../drizzle/schema";
 import { getItemForViewer, getQueue } from "../triage";
 import { getKnowledgeSection, retrieveKnowledge } from "../knowledge";
 import { completeHubSpotAuthorization } from "../hubspot";
@@ -80,7 +80,7 @@ async function startServer() {
     ] });
     const slackMeta = body.params?._meta as { slack?: { user_id?: string; team_id?: string; enterprise_id?: string | null; userId?: string; teamId?: string } } | undefined;
     const slackUserId = slackMeta?.slack?.user_id ?? slackMeta?.slack?.userId; const slackWorkspaceId = slackMeta?.slack?.team_id ?? slackMeta?.slack?.teamId;
-    const db = await getDb(); const member = db && slackUserId && slackWorkspaceId ? (await db.select().from(teamMembers).where(and(eq(teamMembers.slackUserId, slackUserId), eq(teamMembers.slackWorkspaceId, slackWorkspaceId))).limit(1))[0] : undefined;
+    const db = await getDb(); const member = db && slackUserId && slackWorkspaceId ? (await db.select({ user: users, teamMember: teamMembers }).from(users).innerJoin(teamMembers, eq(teamMembers.userId, users.id)).where(and(eq(users.slackUserId, slackUserId), eq(users.slackWorkspaceId, slackWorkspaceId), eq(users.role, "admin"), eq(users.identityStatus, "verified"))).limit(1))[0] : undefined;
     if (!member) { if (slackUserId && slackWorkspaceId) await capturePendingMcpIdentity({ slackUserId, slackWorkspaceId, enterpriseId: slackMeta?.slack?.enterprise_id }); return res.status(403).json({ jsonrpc: "2.0", id, error: { code: -32003, message: "This signed Slack identity is not approved for Light Labs data. An administrator can approve the pending request in Slack Connections." } }); }
     if (body.method !== "tools/call") return res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Unsupported MCP method." } });
     const tool = body.params?.name; const args = (body.params?.arguments ?? {}) as Record<string, unknown>;
@@ -90,8 +90,8 @@ async function startServer() {
         return respond({ content: [{ type: "text", text: JSON.stringify({ sources: knowledge.sources, retrieval_plan: knowledge.plans, reply_eligibility: { status: knowledge.gate.status, reasons: knowledge.gate.reasons } }) }] });
       }
       if (tool === "triage.get_knowledge_section") { const sourceId = typeof args.source_id === "string" ? args.source_id : ""; const anchor = typeof args.anchor === "string" ? args.anchor : ""; const section = await getKnowledgeSection(sourceId, anchor); return respond({ content: [{ type: "text", text: JSON.stringify(section) }] }); }
-      if (tool === "triage.search_queue") { const lane = args.lane === "auto" || args.lane === "assisted" || args.lane === "escalate" ? args.lane : undefined; const queue = await getQueue(member.id, lane); return respond({ content: [{ type: "text", text: JSON.stringify(queue) }] }); }
-      if (tool === "triage.get_interaction") { const interactionId = typeof args.interaction_id === "string" ? args.interaction_id : ""; const item = await getItemForViewer(interactionId, member.id); if (!item) return toolError("Interaction not found in this AE queue."); return respond({ content: [{ type: "text", text: JSON.stringify(item) }] }); }
+      if (tool === "triage.search_queue") { const lane = args.lane === "auto" || args.lane === "assisted" || args.lane === "escalate" ? args.lane : undefined; const queue = await getQueue(member.teamMember.id, lane); return respond({ content: [{ type: "text", text: JSON.stringify(queue) }] }); }
+      if (tool === "triage.get_interaction") { const interactionId = typeof args.interaction_id === "string" ? args.interaction_id : ""; const item = await getItemForViewer(interactionId, member.teamMember.id); if (!item) return toolError("Interaction not found in this AE queue."); return respond({ content: [{ type: "text", text: JSON.stringify(item) }] }); }
       return toolError("Unknown Light Labs MCP tool.");
     } catch (error) { return toolError(error instanceof Error ? error.message : "MCP tool execution failed."); }
   });

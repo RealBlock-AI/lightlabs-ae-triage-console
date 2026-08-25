@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
-import { accounts, contactIdentities, contacts, hubspotConnections, hubspotContextSnapshots, hubspotOauthSessions } from "../drizzle/schema";
+import { accountMemberships, accounts, contactIdentities, contacts, hubspotConnections, hubspotContextSnapshots, hubspotOauthSessions, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { resolveExternalSlackIdentityCandidate } from "./externalIdentity";
 
@@ -162,11 +162,18 @@ export async function addPendingContactMapping(input: { accountId: string; name:
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const email = input.email.trim().toLowerCase(); const name = input.name.trim(); const slackWorkspaceId = input.slackWorkspaceId.trim(); const slackUserId = input.slackUserId.trim();
   if (!name || !email.includes("@") || !slackWorkspaceId || !slackUserId) throw new Error("Name, verified email, Slack workspace ID, and Slack user ID are required.");
-  const account = (await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, input.accountId)).limit(1))[0]; if (!account) throw new Error("Choose a valid Light Labs account.");
+  const account = (await db.select().from(accounts).where(eq(accounts.id, input.accountId)).limit(1))[0]; if (!account?.ownerUserId) throw new Error("Choose an account with an assigned internal owner.");
   const existing = (await db.select({ id: contacts.id }).from(contacts).where(and(eq(contacts.slackWorkspaceId, slackWorkspaceId), eq(contacts.slackUserId, slackUserId))).limit(1))[0]; if (existing) throw new Error("This Slack workspace and user are already mapped to a Light Labs contact.");
+  let user = (await db.select().from(users).where(and(eq(users.slackWorkspaceId, slackWorkspaceId), eq(users.slackUserId, slackUserId))).limit(1))[0];
+  if (!user) {
+    await db.insert(users).values({ openId: `slack_${slackWorkspaceId}_${slackUserId}`.slice(0, 64), name, email, loginMethod: "slack", role: "user", identityStatus: "pending", verifiedAt: null, slackWorkspaceId, slackUserId, hubspotPortalId: null, hubspotContactId: null, testingPlatformUserId: null, limsId: null, createdAt: now(), updatedAt: now(), lastSignedIn: now() });
+    user = (await db.select().from(users).where(and(eq(users.slackWorkspaceId, slackWorkspaceId), eq(users.slackUserId, slackUserId))).limit(1))[0];
+  }
+  if (!user) throw new Error("Unable to create the canonical user.");
   const id = `con_${nanoid(16)}`;
-  await db.insert(contacts).values({ id, accountId: input.accountId, name, email, slackUserId, slackWorkspaceId, hubspotPortalId: null, hubspotContactId: null, identityStatus: "pending", verifiedAt: null, roleTitle: null, hasPlatformLogin: 0 });
-  await db.insert(contactIdentities).values({ id: `ci_slack_${id}`, contactId: id, provider: "slack", tenantId: slackWorkspaceId, externalId: slackUserId, emailNormalized: email, verificationStatus: "pending", verificationMethod: "admin_confirmed", verifiedAt: null, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: now(), updatedAt: now() });
+  await db.insert(contacts).values({ id, userId: user.id, accountId: input.accountId, internalOwnerUserId: account.ownerUserId, name, email, slackUserId, slackWorkspaceId, hubspotPortalId: null, hubspotContactId: null, identityStatus: "pending", verifiedAt: null, roleTitle: null, hasPlatformLogin: 0 });
+  await db.insert(accountMemberships).values({ id: `am_${id}`, accountId: input.accountId, userId: user.id, membershipType: "buyer", status: "pending", buyerUserId: null, internalOwnerUserId: account.ownerUserId, receiveComanCoas: 0, createdAt: now(), updatedAt: now() }).onDuplicateKeyUpdate({ set: { status: "pending", internalOwnerUserId: account.ownerUserId, updatedAt: now() } });
+  await db.insert(contactIdentities).values({ id: `ci_slack_${id}`, contactId: id, userId: user.id, provider: "slack", tenantId: slackWorkspaceId, externalId: slackUserId, emailNormalized: email, verificationStatus: "pending", verificationMethod: "admin_confirmed", verifiedAt: null, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: now(), updatedAt: now() });
   return { id, identityStatus: "pending" as const };
 }
 
@@ -189,12 +196,18 @@ export async function verifyAndMapContact(input: { contactId: string; hubspotCon
   if (!contact?.email) throw new Error("This Light Labs contact must have a verified email before it can be mapped.");
   const candidates = await searchHubSpotContactsByEmail(contact.email); const candidate = candidates.find(item => item.id === input.hubspotContactId);
   if (!candidate) throw new Error("The selected HubSpot contact does not exactly match the Light Labs contact email.");
+  if (!contact.userId) throw new Error("This contact has not been linked to a canonical user.");
+  const canonicalUser = (await db.select().from(users).where(eq(users.id, contact.userId)).limit(1))[0]; if (!canonicalUser) throw new Error("Canonical user not found.");
   const connection = await getHubSpotConnectionStatus();
   const verifiedAt = now(); const portalId = connection.portalId ?? "connected_mcp";
+  const activeBuyerElsewhere = (await db.select().from(accountMemberships).where(and(eq(accountMemberships.userId, canonicalUser.id), eq(accountMemberships.membershipType, "buyer"), eq(accountMemberships.status, "active"))).limit(1))[0];
+  if (activeBuyerElsewhere && activeBuyerElsewhere.accountId !== contact.accountId) throw new Error("This user already has an active buyer membership. Convert the user to a CoMan membership before linking another account.");
+  await db.update(users).set({ name: contact.name, email: contact.email, hubspotPortalId: portalId, hubspotContactId: candidate.id, identityStatus: "verified", verifiedAt, updatedAt: verifiedAt }).where(eq(users.id, canonicalUser.id));
   await db.update(contacts).set({ hubspotContactId: candidate.id, hubspotPortalId: portalId, identityStatus: "verified", verifiedAt }).where(eq(contacts.id, contact.id));
-  if (contact.slackWorkspaceId && contact.slackUserId) await db.insert(contactIdentities).values({ id: `ci_slack_${contact.id}`, contactId: contact.id, provider: "slack", tenantId: contact.slackWorkspaceId, externalId: contact.slackUserId, emailNormalized: contact.email.toLowerCase(), verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: verifiedAt, updatedAt: verifiedAt }).onDuplicateKeyUpdate({ set: { verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, emailNormalized: contact.email.toLowerCase(), updatedAt: verifiedAt } });
-  await db.insert(contactIdentities).values({ id: `ci_hubspot_${contact.id}`, contactId: contact.id, provider: "hubspot", tenantId: portalId, externalId: candidate.id, emailNormalized: contact.email.toLowerCase(), verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: verifiedAt, updatedAt: verifiedAt }).onDuplicateKeyUpdate({ set: { verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, emailNormalized: contact.email.toLowerCase(), updatedAt: verifiedAt } });
-  if (contact.slackWorkspaceId && contact.slackUserId) await resolveExternalSlackIdentityCandidate({ workspaceId: contact.slackWorkspaceId, slackUserId: contact.slackUserId, contactId: contact.id, resolvedByUserId: input.verifiedByUserId });
+  await db.update(accountMemberships).set({ status: "active", buyerUserId: canonicalUser.id, updatedAt: verifiedAt }).where(and(eq(accountMemberships.userId, canonicalUser.id), eq(accountMemberships.accountId, contact.accountId), eq(accountMemberships.membershipType, "buyer")));
+  if (contact.slackWorkspaceId && contact.slackUserId) await db.insert(contactIdentities).values({ id: `ci_slack_${contact.id}`, contactId: contact.id, userId: canonicalUser.id, provider: "slack", tenantId: contact.slackWorkspaceId, externalId: contact.slackUserId, emailNormalized: contact.email.toLowerCase(), verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: verifiedAt, updatedAt: verifiedAt }).onDuplicateKeyUpdate({ set: { userId: canonicalUser.id, verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, emailNormalized: contact.email.toLowerCase(), updatedAt: verifiedAt } });
+  await db.insert(contactIdentities).values({ id: `ci_hubspot_${contact.id}`, contactId: contact.id, userId: canonicalUser.id, provider: "hubspot", tenantId: portalId, externalId: candidate.id, emailNormalized: contact.email.toLowerCase(), verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, revokedAt: null, verifiedByUserId: null, attributes: null, createdAt: verifiedAt, updatedAt: verifiedAt }).onDuplicateKeyUpdate({ set: { userId: canonicalUser.id, verificationStatus: "verified", verificationMethod: "hubspot_exact_email", verifiedAt, emailNormalized: contact.email.toLowerCase(), updatedAt: verifiedAt } });
+  if (contact.slackWorkspaceId && contact.slackUserId) await resolveExternalSlackIdentityCandidate({ workspaceId: contact.slackWorkspaceId, slackUserId: contact.slackUserId, userId: canonicalUser.id, accountId: contact.accountId, resolvedByUserId: input.verifiedByUserId });
   return { id: contact.id, hubspotContactId: candidate.id, email: candidate.email, verified: true as const };
 }
 

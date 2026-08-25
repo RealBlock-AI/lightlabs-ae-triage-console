@@ -44,7 +44,7 @@ export function registerOAuthRoutes(app: Express) {
         openId: userInfo.openId,
         name: userInfo.name || null,
         email: userInfo.email ?? null,
-        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+        loginMethod: userInfo.loginMethod === "slack" ? "slack" : "google",
         lastSignedIn: new Date(),
       });
 

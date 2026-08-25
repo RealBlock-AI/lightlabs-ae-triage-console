@@ -14,7 +14,7 @@ export async function assertResultVisible(requestingUserId: number, testId: stri
   const joined = (await db.select({ test: tests, sample: samples, sku: skus, product: products }).from(tests)
     .leftJoin(samples, eq(tests.sampleId, samples.id)).leftJoin(skus, eq(samples.skuId, skus.id)).leftJoin(products, eq(skus.productId, products.id))
     .where(eq(tests.id, testId)).limit(1))[0];
-  if (!joined?.test || !joined.sample || !joined.sku || !joined.product?.companyId) throw new ResultVisibilityError("RESULT_NOT_FOUND", "The selected result cannot be resolved to an owning company.");
+  if (!joined?.test || !joined.sample || !joined.sku || !joined.product?.testingPlatformCompanyId) throw new ResultVisibilityError("RESULT_NOT_FOUND", "The selected result cannot be resolved to an owning company.");
   if (!joined.test.publishedAt) throw new ResultVisibilityError("RESULT_UNRELEASED", "This completed test has not been released to the customer.");
   if (options.reportRequired) {
     const report = (await db.select().from(reports).where(eq(reports.testId, testId)).limit(1))[0];
@@ -22,7 +22,7 @@ export async function assertResultVisible(requestingUserId: number, testId: stri
   }
   const memberships = await db.select().from(companyMemberships).where(and(eq(companyMemberships.userId, requestingUserId), eq(companyMemberships.viewResults, 1)));
   if (!memberships.length) throw new ResultVisibilityError("RESULT_MEMBERSHIP_DENIED", "The requesting user does not have permission to view results.");
-  const ownerCompanyId = joined.product.companyId;
+  const ownerCompanyId = joined.product.testingPlatformCompanyId;
   const direct = memberships.find(membership => membership.companyId === ownerCompanyId);
   if (direct) return { ownerCompanyId, requesterCompanyId: ownerCompanyId, direct: true, test: joined.test, sample: joined.sample, sku: joined.sku, product: joined.product };
   for (const membership of memberships) {

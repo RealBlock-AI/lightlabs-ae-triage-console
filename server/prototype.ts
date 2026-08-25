@@ -35,7 +35,7 @@ function addRefusal(evidence: EvidenceItem[], facts: ResolvedFacts, label: strin
 
 async function assembleOrderEvidence(companyId: string, evidence: EvidenceItem[], facts: ResolvedFacts) {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
-  const order = (await db.select().from(orders).where(eq(orders.companyId, companyId)).orderBy(desc(orders.orderedAt)).limit(1))[0];
+  const order = (await db.select().from(orders).where(eq(orders.testingPlatformCompanyId, companyId)).orderBy(desc(orders.orderedAt)).limit(1))[0];
   if (!order) { addRefusal(evidence, facts, "Order", "ORDER_UNRESOLVED", "No unambiguous order record is available for this company."); return; }
   const relatedTest = (await db.select().from(tests).where(eq(tests.orderId, order.id)).orderBy(desc(tests.updatedAt)).limit(1))[0];
   const shipment = (await db.select().from(shipments).where(eq(shipments.companyId, companyId)).orderBy(desc(shipments.updatedAt)).limit(1))[0];
@@ -48,7 +48,7 @@ async function assembleOrderEvidence(companyId: string, evidence: EvidenceItem[]
 
 async function assembleResultEvidence(requesterId: number, companyId: string, classification: Classification, evidence: EvidenceItem[], facts: ResolvedFacts) {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
-  const product = classification.productName ? (await db.select().from(products).where(eq(products.name, classification.productName)).limit(2))[0] : (await db.select().from(products).where(eq(products.companyId, companyId)).limit(1))[0];
+  const product = classification.productName ? (await db.select().from(products).where(eq(products.name, classification.productName)).limit(2))[0] : (await db.select().from(products).where(eq(products.testingPlatformCompanyId, companyId)).limit(1))[0];
   const skuRows = product ? await db.select().from(skus).where(eq(skus.productId, product.id)) : [];
   const sku = skuRows[0];
   if (!sku) { addRefusal(evidence, facts, "SKU", "SKU_UNRESOLVED", "No scoped SKU record was resolved for the sender."); return; }
@@ -170,7 +170,7 @@ export async function createStructuredIntake(input: { requestingUserId: number; 
   const now = new Date(); const productId = `prod_${nanoid(12)}`; const skuId = `sku_${nanoid(12)}`;
   const analyte = (await db.select().from(analytes).where(eq(analytes.name, input.analyteName.toLowerCase())).limit(1))[0] ?? (await db.insert(analytes).values({ id: `an_${nanoid(12)}`, name: input.analyteName.toLowerCase(), shortName: null, categoryId: null, limsId: null, createdAt: now, updatedAt: now }).$returningId())[0];
   const analyteId = "id" in analyte ? String(analyte.id) : String(analyte);
-  await db.insert(products).values({ id: productId, accountId: input.companyId, companyId: input.companyId, name: input.productName, category: input.category, brand: null, productType: "finished_good", shelfLife: null, servingSizeG: input.availableSampleGrams ? String(input.availableSampleGrams) : null, limsId: null, createdAt: now, updatedAt: now, archivedAt: null });
+  await db.insert(products).values({ id: productId, accountId: input.companyId, appAccountId: input.companyId, testingPlatformCompanyId: input.companyId, testingPlatformProductId: productId, name: input.productName, category: input.category, brand: null, productType: "finished_good", shelfLife: null, servingSizeG: input.availableSampleGrams ? String(input.availableSampleGrams) : null, limsId: null, createdAt: now, updatedAt: now, archivedAt: null });
   await db.insert(skus).values({ id: skuId, name: input.productName, code: input.skuCode, supplier: null, productId, servingSizeGrams: input.availableSampleGrams ? String(input.availableSampleGrams) : null, servingSizeUnit: input.availableSampleGrams ? "g" : null, specRequiresServingSize: input.limitBasis === "per_serving" ? 1 : 0, limsId: null, archivedAt: null, createdAt: now, updatedAt: now });
   if (input.limitValue !== undefined && input.limitUnit && input.limitBasis) await db.insert(specifications).values({ id: `spec_${nanoid(12)}`, skuId, analyteId, source: input.source, limitType: "upper", limitUnit: input.limitUnit, limitBasis: input.limitBasis, upperBound: String(input.limitValue), lowerBound: null, createdAt: now, updatedAt: now });
   return { productId, skuId, analyteId };

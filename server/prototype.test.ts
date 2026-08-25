@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ensurePrototypeSeed } from "./prototypeSeed";
-import { runPrototypeTriage } from "./prototype";
+import { createStructuredIntake, runPrototypeTriage } from "./prototype";
 import { indexKnowledgeDocument } from "./knowledge";
+import { getDb } from "./db";
+import { products } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 describe("canonical prototype triage", () => {
   it("makes a previously unseen verified order-status request eligible for the auto lane", async () => {
@@ -44,5 +47,12 @@ describe("canonical prototype triage", () => {
     expect(result.interaction.lane).toBe("escalate");
     expect(result.interaction.knowledgeCitations?.[0]).toMatchObject({ sourceId: "k_test_contaminants", url: "https://www.lightlabs.com/tests/contaminants", anchor: expect.any(String) });
     expect(result.interaction.evidence.some(item => item.source.startsWith("knowledge_sections#"))).toBe(true);
+  }, 15_000);
+
+  it("writes new operational products with explicit system identifiers rather than the legacy company field", async () => {
+    const created = await createStructuredIntake({ requestingUserId: 9001, companyId: "co_northwind", productName: `Canonical Product ${Date.now()}`, skuCode: `CAN-${Date.now()}`, category: "powder", analyteName: "lead", source: "test" });
+    const db = await getDb();
+    const product = (await db!.select().from(products).where(eq(products.id, created.productId)).limit(1))[0];
+    expect(product).toMatchObject({ appAccountId: "co_northwind", testingPlatformCompanyId: "co_northwind", testingPlatformProductId: created.productId, companyId: null });
   }, 15_000);
 });
