@@ -30,7 +30,8 @@ describe("Decision packet contract", () => {
     // The lane decides the primary action, and an override needs a reason.
     expect(page).toContain("Override + reason");
     expect(page).toContain("Record override");
-    expect(page).toContain("disabled={!reason.trim()");
+    // One compose panel serves both actions that need words before they happen.
+    expect(page).toContain("disabled={!words.trim()");
 
     // Escape returns to the queue.
     expect(page).toContain('event.key === "Escape"');
@@ -49,5 +50,32 @@ describe("Decision packet contract", () => {
     expect(router).toContain("overrideReason: z.string().trim().min(1).optional()");
     // A human decision must never be recorded as auto_resolved.
     expect(server).toContain('input.action === "send" && row.lane === "auto" ? "auto_resolved" as const');
+  });
+});
+
+describe("Follow-ups from the first review", () => {
+  it("shows the acknowledgement clock in the packet header, not the resolution target", async () => {
+    const page = await readFile(join(process.cwd(), "client/src/pages/PrototypeInteraction.tsx"), "utf8");
+    // The queue and the packet must not disagree about the same item's clock,
+    // so both read it from the same shared module.
+    expect(page).toContain('from "@shared/clock"');
+    expect(page).toContain("ackClock(new Date(item.receivedAt), now)");
+    expect(page).toContain('clock.urgent ? "lane-ink-escalate"');
+    expect(page).not.toContain("sla {item.slaMinutes}m");
+    // It is a live clock, so it ticks.
+    expect(page).toContain("setInterval");
+  });
+
+  it("pauses the clock, visibly, while the customer has the question", async () => {
+    const [page, server] = await Promise.all([
+      readFile(join(process.cwd(), "client/src/pages/PrototypeInteraction.tsx"), "utf8"),
+      readFile(join(process.cwd(), "server/prototype.ts"), "utf8"),
+    ]);
+    expect(page).toContain("sla paused · waiting on customer");
+    expect(page).toContain("pauses the acknowledgement clock");
+    // Asking the customer means asking something, enforced on the server too.
+    expect(server).toContain('if (input.action === "ask_customer" && !question) throw new Error("Asking the customer requires a question.");');
+    expect(server).toContain("clarifications");
+    expect(page).toContain('disabled={!words.trim()');
   });
 });
