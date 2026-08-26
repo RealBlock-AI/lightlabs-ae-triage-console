@@ -37,6 +37,31 @@ function addRefusal(evidence: EvidenceItem[], facts: ResolvedFacts, label: strin
   facts.unresolvedSlots.push(label.toLowerCase().replace(/\s+/g, "_")); evidence.push({ label, value: reason, source: "prototype safety gate", citable: false, refusalCode: code });
 }
 
+/**
+ * Released test count for the current calendar year.
+ *
+ * OPS_DATA_EXPORT is declared auto-eligible, but compose() had no branch for
+ * it, so the one intent behind "send me everything we tested this year" could
+ * never produce an auto answer. It needs a number, and the number has to be
+ * countable from released rows alone.
+ *
+ * published_at is the release gate: an unpublished test is not the customer's
+ * to see, so counting it would inflate the figure with results they cannot open.
+ */
+async function assembleExportEvidence(companyId: string, evidence: EvidenceItem[], facts: ResolvedFacts) {
+  const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const yearStart = new Date(new Date().getUTCFullYear(), 0, 1);
+  const companyOrders = await db.select().from(orders).where(eq(orders.testingPlatformCompanyId, companyId));
+  if (!companyOrders.length) { addRefusal(evidence, facts, "Test history", "HISTORY_UNRESOLVED", "No order records are available for this company, so a released-test count cannot be stated."); return; }
+  const rows = await db.select().from(tests).where(inArray(tests.orderId, companyOrders.map(order => order.id)));
+  const released = rows.filter(test => test.publishedAt && new Date(test.publishedAt) >= yearStart);
+  // A zero count is not an answer. "You have no released tests this year" and
+  // "the scoping missed your records" are indistinguishable from here, and the
+  // first is a claim about the customer's account that a human should make.
+  if (!released.length) { addRefusal(evidence, facts, "Test history", "HISTORY_EMPTY", "No released tests were found for the current year, which is a claim about the account that needs a human to confirm."); return; }
+  evidence.push({ label: "Released tests this year", value: String(released.length), source: "tests.published_at", citable: true });
+}
+
 async function assembleOrderEvidence(companyId: string, evidence: EvidenceItem[], facts: ResolvedFacts) {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const order = (await db.select().from(orders).where(eq(orders.testingPlatformCompanyId, companyId)).orderBy(desc(orders.orderedAt)).limit(1))[0];
@@ -116,6 +141,7 @@ function compose(lane: Lane, intents: Intent[], evidence: EvidenceItem[]) {
   const finding = (label: string) => evidence.find(item => item.label === label)?.value;
   if (lane === "auto" && intents.includes("ORDER_STATUS")) { const order = finding("Order status"); const laboratory = finding("Laboratory state"); const completion = finding("Estimated completion"); if (order && laboratory && completion) return { acknowledgment: "The latest operational records are ready.", draft: `Your latest order is ${order}. The related laboratory state is ${laboratory}, with an estimated completion date of ${completion}.` }; }
   if (lane === "auto" && intents.includes("OPS_SHIPPING")) { const shipment = finding("Shipment status"); if (shipment) return { acknowledgment: "The shipping record is ready.", draft: `The current shipment status is ${shipment}.` }; }
+  if (lane === "auto" && intents.includes("OPS_DATA_EXPORT")) { const count = finding("Released tests this year"); if (count) return { acknowledgment: "The released test history is ready.", draft: `There are ${count} released test records on this account for the current year. The full history is available in the platform, where it can be reviewed and exported.` }; }
   if (lane === "auto" && intents.includes("STABILITY_SCHEDULE")) { const point = finding("Stability time point"); if (point) return { acknowledgment: "The scheduled stability record is ready.", draft: `The current study has a ${point}.` }; }
   const citations = evidence.filter(item => item.citable || item.advisory || item.source.startsWith("knowledge_sections#")).map(item => `${item.label}: ${item.value}`).join("\n");
   return lane === "escalate" ? { acknowledgment: "A human decision is required before any response is recorded.", draft: `Decision packet\n${citations}` } : { acknowledgment: "Records are assembled for an AE-reviewed response.", draft: `AE review packet\n${citations}` };
@@ -142,6 +168,7 @@ export async function runPrototypeTriage(input: { source: string; channelRef: st
   let domain: unknown;
   if (membership) {
     if (classification.intents.includes("ORDER_STATUS") || classification.intents.includes("OPS_SHIPPING") || classification.intents.includes("OPS_DATA_EXPORT")) await assembleOrderEvidence(membership.companyId, evidence, facts);
+    if (classification.intents.includes("OPS_DATA_EXPORT")) await assembleExportEvidence(membership.companyId, evidence, facts);
     if (classification.intents.includes("STABILITY_SCHEDULE")) await assembleStability(membership.companyId, evidence, facts);
     if (classification.intents.includes("OOS_RESULT")) { domain = await assembleResultEvidence(user!.id, membership.companyId, classification, evidence, facts, trace); if ((domain as any)?.agreement === "disagrees") { lane = demoteLane(lane, "escalate"); reasons.unshift("Force-escalated: platform verdict and shadow check disagree."); } }
     if (classification.intents.includes("TEST_RECOMMENDATION")) await assembleRecommendation(membership.companyId, classification, evidence, facts);

@@ -36,7 +36,11 @@ describe("gate trace", () => {
   it("scopes the list to the intent, so nothing is listed that never applied", () => {
     // An order-status question owns no result and has no serving basis to agree on.
     expect(declareGateChecks(["ORDER_STATUS"])).toEqual(["identity_verified", "output_guard"]);
-    expect(declareGateChecks(["REGULATORY_LIMIT_QUESTION"])).toContain("limit_resolved");
+    // A regulatory question resolves no limit in this pipeline: only OOS_RESULT
+    // reaches assembleResultEvidence. Declaring limit_resolved here left a row
+    // nothing could fill, and an unfilled row reads as "not reached" - which
+    // says an earlier check stopped the run when none had.
+    expect(declareGateChecks(["REGULATORY_LIMIT_QUESTION"])).not.toContain("limit_resolved");
     expect(declareGateChecks(["REGULATORY_LIMIT_QUESTION"])).not.toContain("serving_basis_agreement");
   });
 
@@ -76,5 +80,49 @@ describe("gate trace", () => {
     const trace = gateTrace(declareGateChecks(["ORDER_STATUS"]));
     trace.pass("serving_basis_agreement", "samples");
     expect(trace.rows().map(row => row.check)).toEqual(["identity_verified", "output_guard"]);
+  });
+});
+
+describe("gate trace declarations match what the pipeline records", () => {
+  // Result evidence is assembled only for OOS_RESULT, so these are the only
+  // intents that can fill the result, limit and serving rows.
+  it("declares only identity and the output guard for a label-claim question", () => {
+    expect(declareGateChecks(["LABEL_CLAIM_VARIANCE"])).toEqual(["identity_verified", "output_guard"]);
+  });
+
+  it("declares only identity and the output guard for a regulatory question", () => {
+    expect(declareGateChecks(["REGULATORY_LIMIT_QUESTION"])).toEqual(["identity_verified", "output_guard"]);
+  });
+
+  it("still declares the full chain for an out-of-spec result", () => {
+    expect(declareGateChecks(["OOS_RESULT"])).toEqual([
+      "identity_verified", "result_ownership", "limit_resolved", "serving_basis_agreement", "output_guard",
+    ]);
+  });
+
+  /**
+   * The invariant behind the fix: a declared check must be one some code path
+   * can record. Otherwise it renders as "not reached" forever, asserting a stop
+   * that never happened. Checked here rather than at runtime, because the
+   * builder deliberately always emits the full declared list.
+   */
+  it("never declares a check no code path can record", () => {
+    // What the pipeline records, by intent (prototype.ts): identity and the
+    // output guard always; the result chain only under OOS_RESULT.
+    const alwaysRecorded = ["identity_verified", "output_guard"];
+    const underOosResult = ["result_ownership", "limit_resolved", "serving_basis_agreement"];
+    for (const intent of INTENTS) {
+      const recordable = new Set(intent === "OOS_RESULT" ? [...alwaysRecorded, ...underOosResult] : alwaysRecorded);
+      for (const check of declareGateChecks([intent])) {
+        expect(recordable.has(check), `${intent} declares ${check}, which nothing records`).toBe(true);
+      }
+    }
+  });
+});
+
+describe("the data-export auto template clears its own output guard", () => {
+  it("does not demote itself on pricing, regulatory or verdict language", () => {
+    const draft = "There are 47 released test records on this account for the current year. The full history is available in the platform, where it can be reviewed and exported.";
+    expect(enforceAutoLaneOutput("auto", draft).lane).toBe("auto");
   });
 });
