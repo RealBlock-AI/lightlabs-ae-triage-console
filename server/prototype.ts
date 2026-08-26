@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { accounts, clarifications, contacts, interactions, orders, products, responseFeedback, tests, users } from "../drizzle/schema";
+import { accounts, clarifications, contacts, interactionAttachments, interactions, orders, products, responseFeedback, tests, users } from "../drizzle/schema";
 import { analytes, assayCompanyPrices, assays, companyMemberships, regulatoryLimits, samples, shipments, skus, specifications, stabilityStudies, stabilityStudyTimePoints, testLimits, testResults, turnaroundTimes } from "../drizzle/canonicalSchema";
 import { evaluateTest, formatCurrency, formatDate, formatNumber, formatStatus, stabilityStatus, summarizeTrend } from "./domain";
 import { getDb } from "./db";
@@ -121,8 +121,9 @@ function compose(lane: Lane, intents: Intent[], evidence: EvidenceItem[]) {
   return lane === "escalate" ? { acknowledgment: "A human decision is required before any response is recorded.", draft: `Decision packet\n${citations}` } : { acknowledgment: "Records are assembled for an AE-reviewed response.", draft: `AE review packet\n${citations}` };
 }
 
-export async function runPrototypeTriage(input: { source: string; channelRef: string | null; externalEventId?: string | null; rawText: string; slackUserId?: string | null; slackWorkspaceId?: string | null; attachmentsPresent?: boolean }) {
+export async function runPrototypeTriage(input: { source: string; channelRef: string | null; externalEventId?: string | null; rawText: string; slackUserId?: string | null; slackWorkspaceId?: string | null; attachmentsPresent?: boolean; attachments?: Array<{ id: string; name: string | null; mimetype: string | null; filetype: string | null; size: number | null; permalink: string | null; download_url: string | null; is_external: boolean }> }) {
   await ensurePrototypeSeed(); const db = await getDb(); if (!db) throw new Error("Database unavailable"); const started = begins();
+  const attachments = input.attachments ?? []; const attachmentsPresent = input.attachmentsPresent || attachments.length > 0;
   if (input.externalEventId) { const duplicate = (await db.select().from(interactions).where(and(eq(interactions.source, input.source), eq(interactions.externalEventId, input.externalEventId))).limit(1))[0]; if (duplicate) return { duplicate: true, interaction: duplicate }; }
   const user = input.slackUserId && input.slackWorkspaceId ? (await db.select().from(users).where(and(eq(users.slackUserId, input.slackUserId), eq(users.slackWorkspaceId, input.slackWorkspaceId))).limit(1))[0] : undefined;
   const membership = user ? (await db.select().from(companyMemberships).where(eq(companyMemberships.userId, user.id)).limit(1))[0] : undefined;
@@ -145,7 +146,7 @@ export async function runPrototypeTriage(input: { source: string; channelRef: st
     if (classification.intents.includes("OOS_RESULT")) { domain = await assembleResultEvidence(user!.id, membership.companyId, classification, evidence, facts, trace); if ((domain as any)?.agreement === "disagrees") { lane = demoteLane(lane, "escalate"); reasons.unshift("Force-escalated: platform verdict and shadow check disagree."); } }
     if (classification.intents.includes("TEST_RECOMMENDATION")) await assembleRecommendation(membership.companyId, classification, evidence, facts);
   }
-  if (input.attachmentsPresent && classification.intents.includes("SPEC_INTAKE")) evidence.push({ label: "Structured intake", value: "A structured intake form is the supported path for attached specification data.", source: "ingest metadata", citable: false, advisory: true });
+  if (attachmentsPresent && classification.intents.includes("SPEC_INTAKE")) evidence.push({ label: "Structured intake", value: "A structured intake form is the supported path for attached specification data.", source: "ingest metadata", citable: false, advisory: true });
   const blocking = evidence.filter(item => !item.citable && !item.advisory); if (blocking.length || facts.unresolvedSlots.length) { lane = demoteLane(lane, "assisted"); reasons.push("A required fact could not be resolved or safely disclosed."); }
   if (lane !== "auto") {
     try {
@@ -171,8 +172,16 @@ export async function runPrototypeTriage(input: { source: string; channelRef: st
   const text = compose(lane, classification.intents, evidence); const guarded = enforceAutoLaneOutput(lane, `${text.acknowledgment}\n${text.draft}`); lane = guarded.lane; reasons.push(...guarded.demotions);
   if (guarded.demotions.length) trace.stop("output_guard", "stopped here"); else trace.pass("output_guard", "policy.FORBIDDEN_IN_AUTO");
   const replyReasons: string[] = []; if (!user || !membership) replyReasons.push("A verified sender-to-company identity is required."); if (lane !== "auto") replyReasons.push("This interaction is not in an auto-eligible lane."); if (classification.confidence < AUTO_CONFIDENCE_FLOOR) replyReasons.push("Classifier confidence is below the auto floor."); if (blocking.length) replyReasons.push("A required evidence item is unresolved or non-citable."); if (!classification.intents.every(intent => ["ORDER_STATUS", "OPS_SHIPPING", "OPS_DATA_EXPORT", "STABILITY_SCHEDULE"].includes(intent))) replyReasons.push("No approved auto template exists for every intent."); const status = replyReasons.length ? "ineligible" as const : "eligible" as const;
-  const id = `int_${nanoid(16)}`; const row = { id, source: input.source, channelRef: input.channelRef, externalEventId: input.externalEventId ?? input.channelRef ?? null, sourceSchemaVersion: "prototype-fixture-v2", threadRef: null, sourceReceivedAt: new Date(), contactId: contact?.id ?? null, accountId: membership?.companyId ?? null, ownerId: ownerFor(membership?.companyId), requestingUserId: user?.id ?? null, companyId: membership?.companyId ?? null, receivedAt: new Date(), rawText: input.rawText, intents: classification.intents, confidence: String(classification.confidence), imminentAction: 0, classifierMethod: operationalIntent(input.rawText) ? "deterministic_operational_v2" : "prototype_structured_v2", baseLane: baseLane(classification.intents), lane, laneReasons: reasons, gateTrace: trace.rows(), verifiedReplyStatus: status, replyGateReasons: replyReasons, acknowledgment: text.acknowledgment, draft: text.draft, evidence, precedent: null, knowledgeCitations, domainComputations: domain as Record<string, unknown> ?? null, resolvedFacts: facts, attachmentsPresent: input.attachmentsPresent ? 1 : 0, sendAllowed: status === "eligible" ? 1 : 0, sendDisabled: blocking.length ? 1 : 0, status: status === "eligible" ? "auto_resolved" as const : "open" as const, msToAck: Date.now() - started, humanMinutesSaved: "0", queuePriority: severity[lane], slaMinutes: lane === "escalate" ? 15 : lane === "assisted" ? 30 : 60, resolvedAt: null, resolvedBy: null };
-  await db.insert(interactions).values(row); return { duplicate: false, interaction: row };
+  const id = `int_${nanoid(16)}`; const row = { id, source: input.source, channelRef: input.channelRef, externalEventId: input.externalEventId ?? input.channelRef ?? null, sourceSchemaVersion: "prototype-fixture-v2", threadRef: null, sourceReceivedAt: new Date(), contactId: contact?.id ?? null, accountId: membership?.companyId ?? null, ownerId: ownerFor(membership?.companyId), requestingUserId: user?.id ?? null, companyId: membership?.companyId ?? null, receivedAt: new Date(), rawText: input.rawText, intents: classification.intents, confidence: String(classification.confidence), imminentAction: 0, classifierMethod: operationalIntent(input.rawText) ? "deterministic_operational_v2" : "prototype_structured_v2", baseLane: baseLane(classification.intents), lane, laneReasons: reasons, gateTrace: trace.rows(), verifiedReplyStatus: status, replyGateReasons: replyReasons, acknowledgment: text.acknowledgment, draft: text.draft, evidence, precedent: null, knowledgeCitations, domainComputations: domain as Record<string, unknown> ?? null, resolvedFacts: facts, attachmentsPresent: attachmentsPresent ? 1 : 0, sendAllowed: status === "eligible" ? 1 : 0, sendDisabled: blocking.length ? 1 : 0, status: status === "eligible" ? "auto_resolved" as const : "open" as const, msToAck: Date.now() - started, humanMinutesSaved: "0", queuePriority: severity[lane], slaMinutes: lane === "escalate" ? 15 : lane === "assisted" ? 30 : 60, resolvedAt: null, resolvedBy: null };
+  await db.insert(interactions).values(row);
+  if (attachments.length) {
+    const stamped = new Date();
+    for (const file of attachments) {
+      const values = { id: `att_${nanoid(16)}`, interactionId: id, slackFileId: file.id, name: file.name, mimetype: file.mimetype, filetype: file.filetype, sizeBytes: file.size, permalink: file.permalink, downloadUrl: file.download_url, storedUrl: null, isExternal: file.is_external ? 1 : 0, createdAt: stamped };
+      await db.insert(interactionAttachments).values(values).onDuplicateKeyUpdate({ set: { name: values.name, mimetype: values.mimetype, filetype: values.filetype, sizeBytes: values.sizeBytes, permalink: values.permalink, downloadUrl: values.downloadUrl } });
+    }
+  }
+  return { duplicate: false, interaction: row, attachments };
 }
 
 /**
@@ -288,8 +297,15 @@ export async function getPrototypeItem(id: string) {
     ? toDualVerdict(verdict, { analyte: "lead", resultRef: row.id })
     : undefined;
 
+  // What the customer actually sent. The packet shows it above the draft,
+  // because a draft written without opening the file has to be read that way.
+  const attachments = await db.select().from(interactionAttachments)
+    .where(eq(interactionAttachments.interactionId, id))
+    .orderBy(interactionAttachments.createdAt);
+
   return {
     ...row,
+    attachments,
     account: account?.name ?? "Unmapped account",
     contact: contact?.name ?? requester?.name ?? "Unresolved contact",
     tier: tierFor(account),
