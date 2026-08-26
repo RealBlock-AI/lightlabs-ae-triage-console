@@ -183,6 +183,13 @@
       "when": 1787761248350,
       "tag": "0025_superb_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1787786684647,
+      "tag": "0026_chief_stephen_strange",
+      "breakpoints": true
     }
   ]
 }
