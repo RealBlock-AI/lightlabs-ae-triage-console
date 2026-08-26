@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { interactions, orders, products, tests, users } from "../drizzle/schema";
+import { accounts, contacts, interactions, orders, products, tests, users } from "../drizzle/schema";
 import { analytes, assayCompanyPrices, assays, companyMemberships, regulatoryLimits, samples, shipments, skus, specifications, stabilityStudies, stabilityStudyTimePoints, testLimits, testResults, turnaroundTimes } from "../drizzle/canonicalSchema";
 import { evaluateTest, formatCurrency, formatDate, formatNumber, formatStatus, stabilityStatus, summarizeTrend } from "./domain";
 import { getDb } from "./db";
@@ -8,6 +8,7 @@ import { assertResultVisible, ResultVisibilityError } from "./permissions";
 import { AUTO_CONFIDENCE_FLOOR, baseLane, declareGateChecks, demoteLane, enforceAutoLaneOutput, gateTrace, GENERAL_CONFIDENCE_FLOOR, INTENTS, operationalIntent, type GateTraceBuilder, type Intent, type Lane } from "./policy";
 import { ensurePrototypeSeed } from "./prototypeSeed";
 import { getKnowledgeDocument, retrieveKnowledge } from "./knowledge";
+import { ackClock, ageLabel, ageMinutes, categoryLabel, tierFor, tierRank, type QueueRow } from "./queue";
 
 type EvidenceItem = { label: string; value: string; source: string; citable: boolean; advisory?: boolean; refusalCode?: string };
 type Classification = { intents: Intent[]; confidence: number; sampleLabel?: string; analyteName?: string; productName?: string; destinationStates: string[]; statedClaim?: { value: number; unit: string } };
@@ -122,6 +123,9 @@ export async function runPrototypeTriage(input: { source: string; channelRef: st
   if (input.externalEventId) { const duplicate = (await db.select().from(interactions).where(and(eq(interactions.source, input.source), eq(interactions.externalEventId, input.externalEventId))).limit(1))[0]; if (duplicate) return { duplicate: true, interaction: duplicate }; }
   const user = input.slackUserId && input.slackWorkspaceId ? (await db.select().from(users).where(and(eq(users.slackUserId, input.slackUserId), eq(users.slackWorkspaceId, input.slackWorkspaceId))).limit(1))[0] : undefined;
   const membership = user ? (await db.select().from(companyMemberships).where(eq(companyMemberships.userId, user.id)).limit(1))[0] : undefined;
+  // The queue shows who asked. contacts carries the name and the platform-login
+  // flag; nothing else on the interaction does.
+  const contact = input.slackUserId ? (await db.select().from(contacts).where(eq(contacts.slackUserId, input.slackUserId)).limit(1))[0] : undefined;
   const facts: ResolvedFacts = { userId: user?.id, companyId: membership?.companyId, unresolvedSlots: [], idSpace: "platform" }; const evidence: EvidenceItem[] = [];
   const classification = classifyPrototype(input.rawText); let lane = baseLane(classification.intents); const reasons = [`Base routing derived from ${classification.intents.join(" + ")}.`];
   // Declared up front so the packet can show what was never reached, not just what ran.
@@ -164,11 +168,66 @@ export async function runPrototypeTriage(input: { source: string; channelRef: st
   const text = compose(lane, classification.intents, evidence); const guarded = enforceAutoLaneOutput(lane, `${text.acknowledgment}\n${text.draft}`); lane = guarded.lane; reasons.push(...guarded.demotions);
   if (guarded.demotions.length) trace.stop("output_guard", "stopped here"); else trace.pass("output_guard", "policy.FORBIDDEN_IN_AUTO");
   const replyReasons: string[] = []; if (!user || !membership) replyReasons.push("A verified sender-to-company identity is required."); if (lane !== "auto") replyReasons.push("This interaction is not in an auto-eligible lane."); if (classification.confidence < AUTO_CONFIDENCE_FLOOR) replyReasons.push("Classifier confidence is below the auto floor."); if (blocking.length) replyReasons.push("A required evidence item is unresolved or non-citable."); if (!classification.intents.every(intent => ["ORDER_STATUS", "OPS_SHIPPING", "OPS_DATA_EXPORT", "STABILITY_SCHEDULE"].includes(intent))) replyReasons.push("No approved auto template exists for every intent."); const status = replyReasons.length ? "ineligible" as const : "eligible" as const;
-  const id = `int_${nanoid(16)}`; const row = { id, source: input.source, channelRef: input.channelRef, externalEventId: input.externalEventId ?? input.channelRef ?? null, sourceSchemaVersion: "prototype-fixture-v2", threadRef: null, sourceReceivedAt: new Date(), contactId: null, accountId: membership?.companyId ?? null, ownerId: ownerFor(membership?.companyId), requestingUserId: user?.id ?? null, companyId: membership?.companyId ?? null, receivedAt: new Date(), rawText: input.rawText, intents: classification.intents, confidence: String(classification.confidence), imminentAction: 0, classifierMethod: operationalIntent(input.rawText) ? "deterministic_operational_v2" : "prototype_structured_v2", baseLane: baseLane(classification.intents), lane, laneReasons: reasons, gateTrace: trace.rows(), verifiedReplyStatus: status, replyGateReasons: replyReasons, acknowledgment: text.acknowledgment, draft: text.draft, evidence, precedent: null, knowledgeCitations, domainComputations: domain as Record<string, unknown> ?? null, resolvedFacts: facts, attachmentsPresent: input.attachmentsPresent ? 1 : 0, sendAllowed: status === "eligible" ? 1 : 0, sendDisabled: blocking.length ? 1 : 0, status: status === "eligible" ? "auto_resolved" as const : "open" as const, msToAck: Date.now() - started, humanMinutesSaved: "0", queuePriority: severity[lane], slaMinutes: lane === "escalate" ? 15 : lane === "assisted" ? 30 : 60, resolvedAt: null, resolvedBy: null };
+  const id = `int_${nanoid(16)}`; const row = { id, source: input.source, channelRef: input.channelRef, externalEventId: input.externalEventId ?? input.channelRef ?? null, sourceSchemaVersion: "prototype-fixture-v2", threadRef: null, sourceReceivedAt: new Date(), contactId: contact?.id ?? null, accountId: membership?.companyId ?? null, ownerId: ownerFor(membership?.companyId), requestingUserId: user?.id ?? null, companyId: membership?.companyId ?? null, receivedAt: new Date(), rawText: input.rawText, intents: classification.intents, confidence: String(classification.confidence), imminentAction: 0, classifierMethod: operationalIntent(input.rawText) ? "deterministic_operational_v2" : "prototype_structured_v2", baseLane: baseLane(classification.intents), lane, laneReasons: reasons, gateTrace: trace.rows(), verifiedReplyStatus: status, replyGateReasons: replyReasons, acknowledgment: text.acknowledgment, draft: text.draft, evidence, precedent: null, knowledgeCitations, domainComputations: domain as Record<string, unknown> ?? null, resolvedFacts: facts, attachmentsPresent: input.attachmentsPresent ? 1 : 0, sendAllowed: status === "eligible" ? 1 : 0, sendDisabled: blocking.length ? 1 : 0, status: status === "eligible" ? "auto_resolved" as const : "open" as const, msToAck: Date.now() - started, humanMinutesSaved: "0", queuePriority: severity[lane], slaMinutes: lane === "escalate" ? 15 : lane === "assisted" ? 30 : 60, resolvedAt: null, resolvedBy: null };
   await db.insert(interactions).values(row); return { duplicate: false, interaction: row };
 }
 
-export async function getPrototypeQueue() { await ensurePrototypeSeed(); const db = await getDb(); if (!db) return []; const rows = await db.select().from(interactions).where(isNotNull(interactions.companyId)).orderBy(desc(interactions.receivedAt)).limit(25); return rows; }
+/**
+ * The queue, projected for the table.
+ *
+ * Everything the row renders is resolved here - account, contact, tier,
+ * category, both clocks and the lane reason - so the page holds no lookup maps
+ * and the sort cannot disagree with what is on screen.
+ *
+ * Sorted by urgency, then account value, then age. Lane is a column, not a
+ * grouping: the AE's cursor never has rows re-order underneath it.
+ */
+export async function getPrototypeQueue(): Promise<QueueRow[]> {
+  await ensurePrototypeSeed();
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(interactions).where(isNotNull(interactions.companyId)).orderBy(desc(interactions.receivedAt)).limit(50);
+  if (!rows.length) return [];
+
+  // Two batched reads rather than a join per row.
+  const companyIds = Array.from(new Set(rows.map(row => row.companyId).filter((id): id is string => Boolean(id))));
+  const contactIds = Array.from(new Set(rows.map(row => row.contactId).filter((id): id is string => Boolean(id))));
+  const userIds = Array.from(new Set(rows.map(row => row.requestingUserId).filter((id): id is number => typeof id === "number")));
+  const accountRows = companyIds.length ? await db.select().from(accounts).where(inArray(accounts.testingPlatformAccountId, companyIds)) : [];
+  const contactRows = contactIds.length ? await db.select().from(contacts).where(inArray(contacts.id, contactIds)) : [];
+  const userRows = userIds.length ? await db.select().from(users).where(inArray(users.id, userIds)) : [];
+  const accountByCompany = new Map(accountRows.map(account => [account.testingPlatformAccountId ?? "", account]));
+  const contactById = new Map(contactRows.map(contact => [contact.id, contact]));
+  const userById = new Map(userRows.map(user => [user.id, user]));
+
+  const now = new Date();
+  const projected = rows.map((row): QueueRow => {
+    const account = accountByCompany.get(row.companyId ?? "");
+    const contact = row.contactId ? contactById.get(row.contactId) : undefined;
+    const receivedAt = row.receivedAt ?? now;
+    const clock = ackClock(receivedAt, now);
+    return {
+      id: row.id,
+      lane: row.lane,
+      account: account?.name ?? "Unmapped account",
+      contact: contact?.name ?? (row.requestingUserId ? userById.get(row.requestingUserId)?.name : undefined) ?? "Unresolved contact",
+      tier: tierFor(account),
+      category: categoryLabel(row.intents),
+      ageLabel: ageLabel(receivedAt, now),
+      ageMinutes: ageMinutes(receivedAt, now),
+      slaLabel: clock.label,
+      slaUrgent: clock.urgent,
+      confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
+      reason: row.laneReasons?.[0] ?? "",
+    };
+  });
+
+  const urgency: Record<Lane, number> = { escalate: 0, assisted: 1, auto: 2 };
+  return projected.sort((a, b) =>
+    urgency[a.lane] - urgency[b.lane]
+    || tierRank(a.tier) - tierRank(b.tier)
+    || b.ageMinutes - a.ageMinutes);
+}
 export async function getPrototypeItem(id: string) { const db = await getDb(); if (!db) return undefined; return (await db.select().from(interactions).where(eq(interactions.id, id)).limit(1))[0]; }
 
 export async function createStructuredIntake(input: { requestingUserId: number; companyId: string; productName: string; skuCode: string; category: string; availableSampleGrams?: number; analyteName: string; limitValue?: number; limitUnit?: string; limitBasis?: "per_serving" | "per_kg" | "per_capsule" | "per_100g"; source: string }) {
