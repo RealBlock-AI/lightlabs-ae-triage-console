@@ -1,5 +1,5 @@
-import { asc, eq, sql } from "drizzle-orm";
-import { accountRelationships, accounts, comanContactBrandAccess, contacts, supportOwners } from "../drizzle/schema";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { accountRelationships, accounts, comanContactBrandAccess, contactIdentities, contacts, supportOwners } from "../drizzle/schema";
 import { getDb } from "./db";
 import { brandsForComan, COMANS_PER_OWNER, DIRECT_BRANDS_PER_OWNER, PORTFOLIO_OWNERS } from "./portfolioModel";
 
@@ -67,7 +67,7 @@ export async function listOwnerPortfolios() {
 export async function getOwnerPortfolio(ownerId: string) {
   const portfolios = await listOwnerPortfolios(); const summary = portfolios.find(portfolio => portfolio.id === ownerId); if (!summary) throw new Error("Support owner not found.");
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
-  const [accountRows, relationships, contactRows, accessRows] = await Promise.all([db.select().from(accounts).where(eq(accounts.ownerId, ownerId)).orderBy(asc(accounts.name)), db.select().from(accountRelationships).where(eq(accountRelationships.active, 1)), db.select().from(contacts), db.select().from(comanContactBrandAccess).where(eq(comanContactBrandAccess.active, 1))]);
+  const [accountRows, relationships, contactRows, accessRows, verifiedSlackIdentities] = await Promise.all([db.select().from(accounts).where(eq(accounts.ownerId, ownerId)).orderBy(asc(accounts.name)), db.select().from(accountRelationships).where(eq(accountRelationships.active, 1)), db.select().from(contacts), db.select().from(comanContactBrandAccess).where(eq(comanContactBrandAccess.active, 1)), db.select().from(contactIdentities).where(and(eq(contactIdentities.provider, "slack"), eq(contactIdentities.verificationStatus, "verified")))]);
   const ownedIds = new Set(accountRows.map(account => account.id)); const ownedRelationships = relationships.filter(row => ownedIds.has(row.comanAccountId));
   const relationshipByBrand = new Map(ownedRelationships.map(row => [row.brandAccountId, row]));
   const brandsByComan = new Map<string, number>(); for (const row of ownedRelationships) brandsByComan.set(row.comanAccountId, (brandsByComan.get(row.comanAccountId) ?? 0) + 1);
@@ -76,8 +76,10 @@ export async function getOwnerPortfolio(ownerId: string) {
   const names = new Map(accountRows.map(account => [account.id, account.name]));
   return { summary, accounts: accountRows.map(account => {
     const relationship = relationshipByBrand.get(account.id);
-    if (account.accountType === "coman") return { id: account.id, name: account.name, accountType: "Co-Man", portfolio: `${brandsByComan.get(account.id) ?? 0} associated brands`, contactScope: `${contactsByComan.get(account.id) ?? 0} contacts with scoped brand access` };
-    if (relationship) return { id: account.id, name: account.name, accountType: "Brand", portfolio: `In ${names.get(relationship.comanAccountId) ?? "Co-Man"} portfolio`, contactScope: `${accessByBrand.get(account.id) ?? 0} Co-Man contact permissions` };
-    return { id: account.id, name: account.name, accountType: "Brand", portfolio: "Direct owner portfolio", contactScope: "Direct brand account" };
+    const verifiedSlackContacts = contactRows.filter(contact => contact.accountId === account.id && verifiedSlackIdentities.some(identity => identity.contactId === contact.id)).map(contact => contact.name);
+    const slackConnection = { verifiedSlackContacts };
+    if (account.accountType === "coman") return { id: account.id, name: account.name, accountType: "Co-Man", portfolio: `${brandsByComan.get(account.id) ?? 0} associated brands`, contactScope: `${contactsByComan.get(account.id) ?? 0} contacts with scoped brand access`, ...slackConnection };
+    if (relationship) return { id: account.id, name: account.name, accountType: "Brand", portfolio: `In ${names.get(relationship.comanAccountId) ?? "Co-Man"} portfolio`, contactScope: `${accessByBrand.get(account.id) ?? 0} Co-Man contact permissions`, ...slackConnection };
+    return { id: account.id, name: account.name, accountType: "Brand", portfolio: "Direct owner portfolio", contactScope: "Direct brand account", ...slackConnection };
   }) };
 }
