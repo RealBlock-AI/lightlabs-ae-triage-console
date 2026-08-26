@@ -18,6 +18,7 @@ import { capturePendingMcpIdentity } from "../mcpIdentity";
 import { recordIntegrationAudit } from "../integrationAudit";
 import { customBotHealth, customBotIngest } from "../customBot";
 import { bobbyHealth, bobbyMcp } from "../bobby";
+import { bobbyAccountBinding, bobbyAccountBindingHealth } from "../accountBinding";
 import { nativeSlackIngest, verifyNativeSlackRequest as verifySlackRequest } from "../nativeIngest";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -51,6 +52,8 @@ async function startServer() {
   app.post("/integrations/slack-bot/ingest", customBotIngest);
   app.get("/integrations/bobby/health", bobbyHealth);
   app.post("/integrations/bobby/mcp", bobbyMcp);
+  app.get("/integrations/bobby/account-binding/health", bobbyAccountBindingHealth);
+  app.post("/integrations/bobby/account-binding", bobbyAccountBinding);
   app.post("/knowledge/retrieve", async (req, res) => {
     const query = typeof req.body?.query === "string" ? req.body.query : "";
     const interactionId = typeof req.body?.interaction_id === "string" ? req.body.interaction_id : undefined;

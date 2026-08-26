@@ -11,3 +11,15 @@
 - [x] Populate fresh approved CRM context for the verified Launch99 contact.
 - [x] Validate verified Slack identity resolution and Launch99 visibility in Sarah Chen's mapping portfolio.
 - [x] Display the verified Slack connection for mapped customer accounts in the Account Mapping portfolio.
+- [x] Audit the submitted account-link claim and all Launch99 identity records to identify the incorrect Slack user ID source.
+- [x] Correct the Launch99 Slack workspace/user identity consistently across every linked demo record.
+- [x] Return an explicit, privacy-safe account-link confirmation from the Support-agent identity lookup.
+- [x] Add focused coverage for corrected identity lookup and account-link confirmation behavior.
+- [x] Document which Launch99 user fields originated from the submitted Slack claim versus project-side provisioning.
+- [x] Enable the authenticated custom bridge for the Launch99 demo workspace without per-channel filtering.
+- [x] Add a dedicated bearer-protected HTTP account-binding endpoint with deterministic binding-ID idempotency.
+- [x] Return explicit pending, bound, conflict, or rejected account-binding outcomes and a safe review reference.
+- [x] Report a verified account-link confirmation through the Support-agent identity lookup.
+- [x] Correct the Launch99 Slack user ID from the Slack-side team’s authoritative account-binding payload.
+- [x] Add end-to-end tests for bridge admission, account binding, conflict handling, and verified lookup confirmation.
+- [x] Add an automated canonical-event test proving the Launch99 workspace-wide bridge policy ingests rather than skips traffic.

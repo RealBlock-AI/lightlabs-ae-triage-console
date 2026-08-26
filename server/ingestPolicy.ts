@@ -10,11 +10,13 @@ const now = () => new Date();
 export async function evaluateIngestPolicy(input: { workspaceId: string | null; channelId: string; transport: IngestTransport }) {
   if (!input.workspaceId) return input.transport === "native_slack" ? { allowed: true as const, reason: "native_without_workspace_policy" } : { allowed: false as const, reason: "bridge_requires_workspace_policy" };
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
-  const policy = (await db.select().from(ingestChannelPolicies).where(and(eq(ingestChannelPolicies.slackWorkspaceId, input.workspaceId), eq(ingestChannelPolicies.channelId, input.channelId))).limit(1))[0];
+  const exactPolicy = (await db.select().from(ingestChannelPolicies).where(and(eq(ingestChannelPolicies.slackWorkspaceId, input.workspaceId), eq(ingestChannelPolicies.channelId, input.channelId))).limit(1))[0];
+  const workspacePolicy = exactPolicy ? undefined : (await db.select().from(ingestChannelPolicies).where(and(eq(ingestChannelPolicies.slackWorkspaceId, input.workspaceId), eq(ingestChannelPolicies.channelId, "*"))).limit(1))[0];
+  const policy = exactPolicy ?? workspacePolicy;
   if (!policy) return input.transport === "native_slack" ? { allowed: true as const, reason: "native_default" } : { allowed: true as const, reason: "bridge_permissive_default" };
   if (!policy.enabled || policy.authoritativeTransport === "disabled") return { allowed: false as const, reason: "channel_disabled" };
   if (policy.authoritativeTransport !== input.transport) return { allowed: false as const, reason: `authoritative_${policy.authoritativeTransport}` };
-  return { allowed: true as const, reason: "authoritative_transport" };
+  return { allowed: true as const, reason: workspacePolicy ? "workspace_authoritative_transport" : "authoritative_transport" };
 }
 
 export async function listIngestPolicies() {

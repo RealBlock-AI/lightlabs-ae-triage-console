@@ -49,6 +49,18 @@ describe("custom-bot ingestion", () => {
     expect(retryPayload).toMatchObject({ ok: true, duplicate: true, interaction_id: firstPayload.interaction_id });
   }, 15_000);
 
+  it("ingests a canonical event under an explicit workspace-wide custom-bridge policy", async () => {
+    const workspaceId = `T_WORKSPACE_BRIDGE_${Date.now()}`;
+    await setIngestPolicy({ workspaceId, channelId: "*", authoritativeTransport: "custom_bridge", enabled: true });
+    const canonical = { provider: "slack", externalEventId: `Ev_workspace_bridge_${Date.now()}`, workspaceId, slackAppId: "A_WORKSPACE_BRIDGE", conversationId: "C_ANY_CHANNEL", conversationType: "channel", senderSlackUserId: "U_WORKSPACE_BRIDGE", messageTs: "1780001500.000001", text: "Validate workspace-wide bridge ingestion.", receivedAt: new Date().toISOString(), isExternallySharedChannel: false };
+    const response = await fetch(`${baseUrl}/integrations/slack-bot/ingest`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.LIGHT_LABS_BOT_INGEST_SECRET}` }, body: JSON.stringify(canonical) });
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({ ok: true, duplicate: false });
+    expect(payload.skipped).not.toBe(true);
+    expect(payload.interaction_id).toEqual(expect.any(String));
+  }, 15_000);
+
   it("accepts a stable channel:ts fallback as externalEventId and creates a pending external candidate from Slack-provided externality", async () => {
     const messageTs = `${Date.now()}.000001`; const externalEventId = `D_EXTERNAL:${messageTs}`;
     const canonical = { provider: "slack", externalEventId, workspaceId: "T_EXTERNAL", slackAppId: "A_EXTERNAL", conversationId: "D_EXTERNAL", conversationType: "im", senderSlackUserId: "U_EXTERNAL", messageTs, text: "I need help with a testing order.", receivedAt: new Date().toISOString(), isExternal: true, isExternallySharedChannel: false };

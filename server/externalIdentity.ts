@@ -1,18 +1,22 @@
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { accountMemberships, contacts, externalSlackIdentityCandidates, interactions, teamMembers, users } from "../drizzle/schema";
+import { accountMemberships, accounts, contacts, externalSlackIdentityCandidates, interactions, slackAccountBindings, teamMembers, users } from "../drizzle/schema";
 import { getDb } from "./db";
 import { resolveCanonicalUserBySlackIdentity } from "./canonicalIdentity";
 
-export type ContactBySlackUserStatus = "verified" | "pending_candidate" | "unmapped" | "revoked";
+export type ContactBySlackUserStatus = "verified" | "pending_candidate" | "unmapped" | "revoked" | "conflict";
 
 export async function getContactBySlackUser(input: { workspaceId: string; slackUserId: string }) {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
+  const conflictBinding = (await db.select().from(slackAccountBindings).where(and(eq(slackAccountBindings.slackTeamId, input.workspaceId), eq(slackAccountBindings.slackUserId, input.slackUserId), eq(slackAccountBindings.status, "conflict"))).orderBy(desc(slackAccountBindings.updatedAt)).limit(1))[0];
+  if (conflictBinding) return { status: "conflict" as const, workspace_id: input.workspaceId, slack_user_id: input.slackUserId, contact: null, candidate: null, link_confirmation: { linked: false, binding_id: conflictBinding.bindingId, status: "conflict" } };
   const canonical = await resolveCanonicalUserBySlackIdentity({ slackWorkspaceId: input.workspaceId, slackUserId: input.slackUserId });
   if (canonical.status === "verified" && canonical.user) {
     const primaryMembership = canonical.memberships[0];
     const contact = primaryMembership ? (await db.select().from(contacts).where(and(eq(contacts.userId, canonical.user.id), eq(contacts.accountId, primaryMembership.account.id))).limit(1))[0] : undefined;
-    return { status: "verified" as const, workspace_id: input.workspaceId, slack_user_id: input.slackUserId, user_id: canonical.user.id, contact: { id: contact?.id ?? null, account_id: primaryMembership?.account.id ?? null, name: canonical.user.name }, candidate: null, internal_owner_user_id: primaryMembership?.membership.internalOwnerUserId ?? null };
+    const account = primaryMembership ? (await db.select().from(accounts).where(eq(accounts.id, primaryMembership.account.id)).limit(1))[0] : undefined;
+    const binding = (await db.select().from(slackAccountBindings).where(and(eq(slackAccountBindings.slackTeamId, input.workspaceId), eq(slackAccountBindings.slackUserId, input.slackUserId), eq(slackAccountBindings.status, "bound"))).orderBy(desc(slackAccountBindings.updatedAt)).limit(1))[0];
+    return { status: "verified" as const, workspace_id: input.workspaceId, slack_user_id: input.slackUserId, user_id: canonical.user.id, contact: { id: contact?.id ?? null, account_id: primaryMembership?.account.id ?? null, name: canonical.user.name }, candidate: null, internal_owner_user_id: primaryMembership?.membership.internalOwnerUserId ?? null, link_confirmation: { linked: true, status: "bound", binding_id: binding?.bindingId ?? null, account_id: account?.id ?? primaryMembership?.account.id ?? null, account_name: account?.name ?? null, owner_id: account?.ownerId ?? null } };
   }
   if (canonical.status === "pending") return { status: "pending_user" as const, workspace_id: input.workspaceId, slack_user_id: input.slackUserId, user_id: canonical.user?.id ?? null, contact: null, candidate: null };
   const candidate = (await db.select().from(externalSlackIdentityCandidates).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, input.workspaceId), eq(externalSlackIdentityCandidates.slackUserId, input.slackUserId), eq(externalSlackIdentityCandidates.status, "pending"))).orderBy(desc(externalSlackIdentityCandidates.lastSeenAt)).limit(1))[0];

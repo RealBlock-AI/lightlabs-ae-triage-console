@@ -169,6 +169,13 @@
       "when": 1787693163241,
       "tag": "0023_blue_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1787709606283,
+      "tag": "0024_bouncy_ben_urich",
+      "breakpoints": true
     }
   ]
 }
