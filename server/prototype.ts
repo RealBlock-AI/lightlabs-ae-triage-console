@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { accounts, contacts, interactions, orders, products, tests, users } from "../drizzle/schema";
+import { accounts, contacts, interactions, orders, products, responseFeedback, tests, users } from "../drizzle/schema";
 import { analytes, assayCompanyPrices, assays, companyMemberships, regulatoryLimits, samples, shipments, skus, specifications, stabilityStudies, stabilityStudyTimePoints, testLimits, testResults, turnaroundTimes } from "../drizzle/canonicalSchema";
 import { evaluateTest, formatCurrency, formatDate, formatNumber, formatStatus, stabilityStatus, summarizeTrend } from "./domain";
 import { getDb } from "./db";
@@ -303,4 +303,68 @@ export async function createStructuredIntake(input: { requestingUserId: number; 
   await db.insert(skus).values({ id: skuId, name: input.productName, code: input.skuCode, supplier: null, productId, servingSizeGrams: input.availableSampleGrams ? String(input.availableSampleGrams) : null, servingSizeUnit: input.availableSampleGrams ? "g" : null, specRequiresServingSize: input.limitBasis === "per_serving" ? 1 : 0, limsId: null, archivedAt: null, createdAt: now, updatedAt: now });
   if (input.limitValue !== undefined && input.limitUnit && input.limitBasis) await db.insert(specifications).values({ id: `spec_${nanoid(12)}`, skuId, analyteId, source: input.source, limitType: "upper", limitUnit: input.limitUnit, limitBasis: input.limitBasis, upperBound: String(input.limitValue), lowerBound: null, createdAt: now, updatedAt: now });
   return { productId, skuId, analyteId };
+}
+
+/* -------------------------------------------------------------------------
+   Acting on a packet.
+
+   The draft is edited in place and autosaves on blur. A decision is recorded
+   against the interaction, and an override records why - a lane the system
+   chose and a human overruled is exactly the case the audit trail exists for.
+------------------------------------------------------------------------- */
+
+export type PacketAction = "send" | "ask_customer" | "resolve" | "override";
+
+export async function savePrototypeDraft(input: { id: string; draft: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.update(interactions).set({ draft: input.draft }).where(eq(interactions.id, input.id));
+  return { saved: true as const };
+}
+
+export async function decidePrototypeItem(input: { id: string; action: PacketAction; overrideReason?: string; sentText?: string; userId?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const row = (await db.select().from(interactions).where(eq(interactions.id, input.id)).limit(1))[0];
+  if (!row) throw new Error("That interaction no longer exists.");
+
+  // An override without a reason is the one thing this action exists to
+  // prevent, so it is refused on the server as well as disabled in the UI.
+  const reason = input.overrideReason?.trim();
+  if (input.action === "override" && !reason) throw new Error("An override requires a reason.");
+
+  // auto_resolved means the system answered without a human. A human pressing
+  // send on a reviewed draft, or overruling the lane outright, is "resolved" -
+  // recording either as auto_resolved would misreport the audit trail.
+  const status = input.action === "ask_customer" ? "awaiting_customer" as const
+    : input.action === "send" && row.lane === "auto" ? "auto_resolved" as const
+    : "resolved" as const;
+  const now = new Date();
+
+  // Asking the customer pauses the item rather than closing it, so it keeps no
+  // resolution timestamp.
+  const closed = status !== "awaiting_customer";
+  await db.update(interactions).set({
+    status,
+    draft: input.sentText ?? row.draft,
+    resolvedAt: closed ? now : null,
+    resolvedBy: closed ? (input.userId ?? "usr_sarah") : null,
+  }).where(eq(interactions.id, input.id));
+
+  if (reason) {
+    await db.insert(responseFeedback).values({
+      id: `fb_${nanoid(16)}`,
+      interactionId: input.id,
+      userId: input.userId ?? "usr_sarah",
+      draftedText: row.draft ?? null,
+      sentText: input.sentText ?? row.draft ?? "",
+      editRatio: "0",
+      category: Array.isArray(row.intents) ? row.intents[0] ?? "UNKNOWN" : "UNKNOWN",
+      lane: row.lane,
+      overrideReason: reason,
+      createdAt: now,
+    });
+  }
+
+  return { status, recordedReason: Boolean(reason) };
 }

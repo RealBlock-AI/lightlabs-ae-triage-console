@@ -1,18 +1,256 @@
+import Verdict from "@/components/Verdict";
+import { LANE, laneBadgeClass, type Lane } from "@/lib/lane";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, BadgeAlert, CheckCircle2, Copy, LockKeyhole, ShieldAlert } from "lucide-react";
-import { useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useLocation, useRoute } from "wouter";
 
-const laneColor: Record<string, string> = { auto: "bg-emerald-100 text-emerald-800", assisted: "bg-amber-100 text-amber-900", escalate: "bg-rose-100 text-rose-800" };
+/**
+ * Screen 2 - the decision packet.
+ *
+ * One customer question and everything needed to act on it, with no second tab.
+ * Two equal columns: the left answers which lane and why, the right answers
+ * what do I do. Nothing important sits below the fold on a laptop.
+ */
+
+type EvidenceEntry = { label: string; value: string; source: string; citable: boolean; advisory?: boolean; refusalCode?: string };
+
+/**
+ * Three flag states that must never be confusable.
+ *
+ * A FINDING is a refusal or an advisory, and it is styled as a result with the
+ * same care as a successful answer - never greyed out, never an error, never an
+ * empty state. Refusing to answer is something the system did, not something
+ * that went wrong.
+ */
+function flagFor(entry: EvidenceEntry) {
+  if (entry.citable) return { label: "citable", badge: "lane-auto", rule: "var(--lane-auto-line)" };
+  if (entry.refusalCode || entry.advisory) return { label: "finding", badge: "lane-assisted", rule: "var(--lane-assisted-line)" };
+  return { label: "not citable", badge: "lane-escalate", rule: "var(--lane-escalate-line)" };
+}
+
+const ACTIONS: Record<Lane, { primary: string; action: "send" | "override" }> = {
+  auto: { primary: "Send", action: "send" },
+  assisted: { primary: "Review and send", action: "send" },
+  escalate: { primary: "Override + reason", action: "override" },
+};
+
+const GLYPH: Record<string, string> = { pass: "✓", stop: "✕", not_reached: "–" };
+
 export default function PrototypeInteraction() {
-  const [, params] = useRoute("/interactions/:id"); const [, navigate] = useLocation(); const [copied, setCopied] = useState(false);
-  const itemQuery = trpc.prototype.item.useQuery({ id: params?.id ?? "" }); const item = itemQuery.data;
-  if (itemQuery.isLoading) return <div className="p-10 text-sm text-slate-500">Loading Slack support interaction…</div>;
-  if (!item) return <section className="p-10"><button onClick={() => navigate("/")} className="text-sm font-semibold text-emerald-700">Back to console</button><h1 className="mt-5 text-3xl font-semibold">Interaction not found</h1></section>;
-  const evidence = item.evidence ?? []; const citations = item.knowledgeCitations ?? []; const computations = item.domainComputations as Record<string, unknown> | null;
-  const copy = async () => { await navigator.clipboard.writeText(item.draft ?? item.acknowledgment); setCopied(true); toast.success("Draft copied for a human to send externally."); };
-  return <section className="mx-auto max-w-7xl p-5 md:p-10"><button className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700" onClick={() => navigate("/")}><ArrowLeft size={16}/>Slack Support</button><header className="mt-6 flex flex-wrap items-start justify-between gap-5"><div><p className="eyebrow">INTERACTION REVIEW</p><h1 className="mt-2 max-w-4xl font-serif text-4xl font-semibold tracking-tight text-slate-950">{item.rawText}</h1><p className="mt-3 text-sm text-slate-500">Recorded {new Date(item.receivedAt).toLocaleString()} · {item.classifierMethod}</p></div><div className="text-right"><span className={`rounded-full px-3 py-1 text-xs font-black tracking-[.14em] ${laneColor[item.lane]}`}>{item.lane.toUpperCase()}</span><p className="mt-2 text-xs text-slate-500">Confidence {Math.round(Number(item.confidence) * 100)}% · displayed, never dispositive</p></div></header>
-    <div className="mt-8 grid gap-6 xl:grid-cols-2"><article className="panel"><h2>Why this route</h2><ol className="mt-4 space-y-2 pl-5 text-sm text-slate-700">{(item.laneReasons ?? []).map((reason, index) => <li key={index}>{reason}</li>)}</ol><h3 className="mt-7 text-sm font-bold uppercase tracking-[.12em] text-slate-500">Reply gate</h3><div className={`mt-3 rounded-xl p-4 text-sm ${item.verifiedReplyStatus === "eligible" ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-950"}`}><b>{item.verifiedReplyStatus === "eligible" ? "Auto-eligible" : "Human review required"}</b><ul className="mt-2 list-disc space-y-1 pl-5">{(item.replyGateReasons ?? []).map((reason, index) => <li key={index}>{reason}</li>)}</ul></div></article><article className={`panel ${item.lane === "escalate" ? "border-rose-200 bg-rose-50/40" : ""}`}><h2>{item.lane === "escalate" ? "Decision packet" : "Prepared draft"}</h2><pre className="message mt-4 whitespace-pre-wrap">{item.draft}</pre><button className="action-primary mt-5" onClick={copy}><Copy size={15}/>{copied ? "Copied for external send" : "Copy draft for external send"}</button><p className="mt-2 text-xs text-slate-500">No Slack or email client exists in this prototype.</p></article></div>
-    <div className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_.75fr]"><article className="panel"><h2>Evidence and source boundary</h2><div className="mt-4 space-y-3">{evidence.map((entry, index) => <div key={index} className={`rounded-xl border p-4 text-sm ${entry.refusalCode ? "border-rose-200 bg-rose-50" : entry.advisory ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}><div className="flex flex-wrap items-center gap-2"><b className="text-slate-950">{entry.label}</b>{entry.refusalCode ? <span className="badge bg-rose-100 text-rose-800"><LockKeyhole size={11}/>{entry.refusalCode}</span> : entry.advisory ? <span className="badge bg-amber-100 text-amber-900"><BadgeAlert size={11}/>AE advisory</span> : <span className="badge bg-emerald-100 text-emerald-800"><CheckCircle2 size={11}/>Citable</span>}</div><p className="mt-2 leading-6 text-slate-700">{entry.value}</p><p className="mt-2 font-mono text-[11px] text-slate-500">{entry.source}</p></div>)}</div></article><aside className="space-y-6"><article className="panel"><h2>Knowledge citations</h2>{citations.length ? <ul className="mt-4 space-y-3">{citations.map((citation, index) => <li key={`${citation.sourceId}-${citation.anchor}-${index}`}><a className="font-semibold text-emerald-700 hover:underline" href={`${citation.url}#${citation.anchor}`} target="_blank" rel="noreferrer">{citation.title} · #{citation.anchor}</a><p className="mt-1 text-xs text-slate-500">Retrieval score {Math.round(citation.score * 100)}%</p></li>)}</ul> : <p className="mt-3 text-sm text-slate-500">No attributed knowledge section was required for this interaction.</p>}</article><article className="panel"><h2>Computation audit</h2>{computations ? <pre className="mt-3 overflow-auto rounded-lg bg-slate-950 p-3 text-xs leading-5 text-emerald-100">{JSON.stringify(computations, null, 2)}</pre> : <p className="mt-3 text-sm text-slate-500">No quantitative domain computation was required.</p>}</article><article className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-slate-100"><ShieldAlert className="text-amber-300" size={20}/><h2 className="mt-3 text-sm font-bold">Disclosure control</h2><p className="mt-2 text-sm leading-6 text-slate-300">A refusal means the prototype withheld the underlying value. It is not a statement that the result is zero, absent, or safe.</p></article></aside></div></section>;
+  const [, params] = useRoute("/interactions/:id");
+  const [, navigate] = useLocation();
+  const id = params?.id ?? "";
+  const utils = trpc.useUtils();
+  const itemQuery = trpc.prototype.item.useQuery({ id }, { enabled: Boolean(id) });
+  const item = itemQuery.data;
+
+  const [draft, setDraft] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [reason, setReason] = useState("");
+  const [askingReason, setAskingReason] = useState(false);
+  const loadedFor = useRef<string>("");
+
+  const saveDraft = trpc.prototype.saveDraft.useMutation({
+    onSuccess: () => { setDirty(false); utils.prototype.item.invalidate({ id }); },
+    onError: error => toast.error(error.message),
+  });
+  const decide = trpc.prototype.decide.useMutation({
+    onSuccess: () => { utils.prototype.item.invalidate({ id }); utils.prototype.queue.invalidate(); navigate("/"); },
+    onError: error => toast.error(error.message),
+  });
+
+  // Load the stored draft once per interaction, so a refetch never overwrites
+  // what the AE is in the middle of typing.
+  useEffect(() => {
+    if (item && loadedFor.current !== item.id) { loadedFor.current = item.id; setDraft(item.draft ?? ""); setDirty(false); }
+  }, [item]);
+
+  // Escape returns to the queue.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !askingReason) navigate("/"); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navigate, askingReason]);
+
+  if (itemQuery.isLoading) return <div className="p-8 text-[13px] text-[#60766c]">Loading the packet…</div>;
+  if (!item) return (
+    <section className="p-8">
+      <button onClick={() => navigate("/")} className="data text-[12px] text-[#176344]">Back to the queue</button>
+      <h1 className="mt-4 font-serif text-2xl font-semibold">That interaction was not found.</h1>
+    </section>
+  );
+
+  const lane = item.lane as Lane;
+  const evidence = (item.evidence ?? []) as EvidenceEntry[];
+  const received = new Date(item.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const config = ACTIONS[lane];
+
+  const run = (action: "send" | "ask_customer" | "resolve" | "override") => {
+    if (action === "override" && !reason.trim()) { setAskingReason(true); return; }
+    decide.mutate({ id: item.id, action, sentText: draft, overrideReason: action === "override" ? reason.trim() : undefined });
+  };
+
+  return (
+    <section className="mx-auto max-w-6xl px-5 pb-10 md:px-8">
+      {/* Header, sticky - the account, the lane and the clock stay with you. */}
+      <header className="sticky top-0 z-20 -mx-5 mb-3 border-b border-[#2b3531] bg-[#e9ede8] px-5 pb-2 pt-3 md:-mx-8 md:px-8">
+        <button onClick={() => navigate("/")} className="data mb-1.5 inline-flex items-center gap-1.5 text-[11px] text-[#3d4841] hover:text-[#176344]">
+          <ArrowLeft size={13} /> queue <span className="text-[#8a968f]">· esc</span>
+        </button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="font-serif text-[22px] font-semibold leading-tight tracking-tight">{item.account}</h1>
+          <span className={laneBadgeClass(lane)}>{LANE[lane].label}</span>
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2">
+          <p className="data text-[11px] text-[#67746e]">
+            {item.contact} · tier {item.tier} · {item.category} · received {received}
+          </p>
+          <p className="data text-[11px] text-[#67746e]">sla {item.slaMinutes}m</p>
+        </div>
+      </header>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {/* Left column - which lane, and why. */}
+        <div className="flex flex-col gap-3">
+          {/* The only left-rail accent in the design: these are the customer's
+              words, not ours. */}
+          <article className="border border-dashed border-[#a3aea8] border-l-[3px] border-l-[#2b3531] bg-[#f4f6f2] px-3.5 py-3">
+            <p className="data text-[10px] uppercase tracking-[.13em] text-[#8a968f]">Customer, verbatim</p>
+            <p className="mt-1.5 text-[13px] italic leading-[1.55] text-[#28372f]">“{item.rawText}”</p>
+          </article>
+
+          {item.dualVerdict && <Verdict {...item.dualVerdict} />}
+
+          <article className="border border-[#2b3531]">
+            <p className="data border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2 text-[10px] uppercase tracking-[.13em] text-[#3d4841]">
+              Gate trace · read top to bottom
+            </p>
+            {item.gateTrace?.length ? (
+              <ol>
+                {item.gateTrace.map(row => (
+                  <li
+                    key={row.check}
+                    className={`flex items-baseline gap-2.5 border-b border-dashed border-[#cfd8d2] px-3.5 py-1.5 last:border-b-0 ${
+                      row.status === "stop" ? "lane-escalate" : row.status === "not_reached" ? "text-[#98a29d]" : "text-[#28372f]"
+                    }`}
+                  >
+                    <span className="data w-[14px] shrink-0 text-[12px]">{GLYPH[row.status]}</span>
+                    <span className="data flex-1 text-[12px]">{row.check}</span>
+                    <span className="data text-[11px] opacity-70">{row.read}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="px-3.5 py-2.5 text-[12px] text-[#67746e]">
+                This interaction predates the gate trace, so its checks were not recorded.
+              </p>
+            )}
+          </article>
+        </div>
+
+        {/* Right column - what do I do. */}
+        <div className="flex flex-col gap-3">
+          <article className="border border-[#2b3531]">
+            <p className="data border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2 text-[10px] uppercase tracking-[.13em] text-[#3d4841]">Evidence</p>
+            <div className="flex flex-col gap-2.5 px-3.5 py-3">
+              {evidence.length ? evidence.map((entry, index) => {
+                const flag = flagFor(entry);
+                return (
+                  <div key={index} className="border-l-2 pl-2.5" style={{ borderColor: flag.rule }}>
+                    <p className="text-[12px] leading-[1.5] text-[#28372f]"><b className="font-semibold">{entry.label}.</b> {entry.value}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="data text-[10px] text-[#8a968f]">{entry.source}</span>
+                      <span className={`lane-badge ${flag.badge}`}>{flag.label}</span>
+                    </div>
+                  </div>
+                );
+              }) : <p className="text-[12px] text-[#67746e]">No evidence was assembled for this interaction.</p>}
+            </div>
+          </article>
+
+          <article className="border border-[#2b3531] px-3.5 py-3">
+            <p className="data text-[10px] uppercase tracking-[.13em] text-[#8a968f]">Account posture</p>
+            {/* gap-4, so the cells never butt together and read as one number. */}
+            <div className="mt-2 flex flex-wrap gap-4">
+              <Stat value={item.posture.openOrders} label="open orders" />
+              <Stat value={item.posture.overdueOrders} label="overdue" />
+              <Stat value={item.posture.openQuestions} label="open qs" />
+              <Stat value={item.posture.hasLogin ? "yes" : "no"} label="has login" />
+            </div>
+          </article>
+
+          <article className="border border-[#2b3531]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2">
+              <p className="data text-[10px] uppercase tracking-[.13em] text-[#3d4841]">
+                Draft — editable in place {dirty && <span className="lane-ink-escalate">· unsaved</span>}
+              </p>
+              {/* Kept adjacent to the number, always. This sentence is the
+                  mechanism that stops confidence being read as the decision. */}
+              <p className="data text-[10px] text-[#8a968f]">
+                conf {item.confidence === null ? "--" : Number(item.confidence).toFixed(2)} · did not set this lane
+              </p>
+            </div>
+            <textarea
+              className="block min-h-[104px] w-full resize-y bg-transparent px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#28372f] outline-none"
+              value={draft}
+              onChange={event => { setDraft(event.target.value); setDirty(true); }}
+              onBlur={() => { if (dirty) saveDraft.mutate({ id: item.id, draft }); }}
+              aria-label="Draft response"
+            />
+          </article>
+
+          <div className="flex flex-wrap gap-2">
+            <button className="action-primary !rounded-[5px] !py-2 !text-[12px]" disabled={decide.isPending} onClick={() => run(config.action)}>
+              {config.primary}
+            </button>
+            <button className="action-secondary !rounded-[5px] !py-2 !text-[12px]" disabled={decide.isPending} onClick={() => run("ask_customer")}>
+              Ask customer
+            </button>
+            <button className="action-secondary !rounded-[5px] !py-2 !text-[12px]" disabled={decide.isPending} onClick={() => run("resolve")}>
+              Resolve
+            </button>
+          </div>
+
+          {askingReason && (
+            <article className="lane-escalate border px-3.5 py-3">
+              <label className="data block text-[10px] uppercase tracking-[.13em]" htmlFor="override-reason">
+                Override reason — required
+              </label>
+              <textarea
+                id="override-reason"
+                autoFocus
+                className="mt-1.5 block min-h-[64px] w-full resize-y border border-[#b4762a] bg-white px-2.5 py-2 text-[12px] leading-[1.5] text-[#28372f] outline-none"
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                placeholder="Why are you overriding the lane the system chose?"
+              />
+              <div className="mt-2 flex gap-2">
+                <button
+                  className="action-primary !rounded-[5px] !py-1.5 !text-[12px]"
+                  disabled={!reason.trim() || decide.isPending}
+                  onClick={() => run("override")}
+                >
+                  Record override
+                </button>
+                <button className="action-secondary !rounded-[5px] !py-1.5 !text-[12px]" onClick={() => { setAskingReason(false); setReason(""); }}>
+                  Cancel
+                </button>
+              </div>
+            </article>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Stat({ value, label }: { value: number | string; label: string }) {
+  return (
+    <div>
+      <p className="data text-[20px] leading-none text-[#13261f]">{value}</p>
+      <p className="data mt-1 text-[10px] text-[#8a968f]">{label}</p>
+    </div>
+  );
 }
