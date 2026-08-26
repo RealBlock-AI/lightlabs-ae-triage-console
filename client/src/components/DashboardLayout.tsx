@@ -1,9 +1,9 @@
-import { Activity, BarChart3, GitMerge, PlugZap, ShieldCheck } from "lucide-react";
+import { Activity, BarChart3, ClipboardCheck, GitMerge, PlugZap, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
-  const items = [{ icon: Activity, label: "Slack Support", path: "/" }, { icon: GitMerge, label: "Account Mapping", path: "/mappings" }, { icon: BarChart3, label: "Support Performance", path: "/performance" }, { icon: PlugZap, label: "Integrations", path: "/integrations" }];
+  const items = [{ icon: Activity, label: "Slack Support", path: "/" }, { icon: GitMerge, label: "Account Mapping", path: "/mappings" }, { icon: ClipboardCheck, label: "Binding Review", path: "/bindings" }, { icon: BarChart3, label: "Support Performance", path: "/performance" }, { icon: PlugZap, label: "Integrations", path: "/integrations" }];
   return <div className="min-h-screen bg-[#f6f7f1] text-[#13261f] md:grid md:grid-cols-[236px_1fr]">
     <aside className="border-b border-[#d6ded7] bg-[#103326] px-4 py-5 text-[#eff8f1] md:min-h-screen md:border-b-0 md:border-r">
       <button onClick={() => setLocation("/")} className="flex items-center gap-3 text-left"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#9ee3bd] text-[#103326]"><ShieldCheck size={20}/></span><span><span className="block text-[11px] font-black tracking-[0.18em] text-[#9ee3bd]">LIGHT LABS</span><span className="block text-sm font-semibold">SUPPORT OPERATIONS</span></span></button>

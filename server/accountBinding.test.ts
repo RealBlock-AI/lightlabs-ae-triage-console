@@ -35,7 +35,7 @@ describe("Bobby HTTP account binding", () => {
     expect(first.status).toBe(200);
     expect(await first.json()).toMatchObject({ status: "bound", binding_id: request.binding_id, conflict: null, account: { account_id: "acct_launch99", account_name: "Launch99 Agency", owner_id: "owner_sarah" } });
     expect(await replay.json()).toMatchObject({ status: "bound", binding_id: request.binding_id, account: { account_id: "acct_launch99", account_name: "Launch99 Agency", owner_id: "owner_sarah" } });
-    expect(await getContactBySlackUser({ workspaceId: request.slack.team_id, slackUserId: request.slack.user_id })).toMatchObject({ status: "verified", link_confirmation: { linked: true, status: "bound", binding_id: request.binding_id, account_id: "acct_launch99", account_name: "Launch99 Agency", owner_id: "owner_sarah" } });
+    expect(await getContactBySlackUser({ workspaceId: request.slack.team_id, slackUserId: request.slack.user_id })).toMatchObject({ status: "verified", link_confirmation: { linked: true, status: "bound", binding_id: request.binding_id, account_id: "acct_launch99", account_name: "Launch99 Agency", owner_id: "owner_sarah", next_dm: { delivery_key: `account-binding:${request.binding_id}`, binding_id: request.binding_id } } });
   });
 
   it("fails closed with a conflict when a second Slack identity claims the bound record", async () => {

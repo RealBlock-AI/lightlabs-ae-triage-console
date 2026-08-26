@@ -23,3 +23,11 @@
 - [x] Correct the Launch99 Slack user ID from the Slack-side team’s authoritative account-binding payload.
 - [x] Add end-to-end tests for bridge admission, account binding, conflict handling, and verified lookup confirmation.
 - [x] Add an automated canonical-event test proving the Launch99 workspace-wide bridge policy ingests rather than skips traffic.
+- [x] Inspect existing mapping controls and account-binding states for review and resolution requirements.
+- [x] Add a binding-review deep-link screen for pending, bound, conflict, and rejected requests.
+- [x] Add authenticated portal actions to approve, reject, or resolve binding conflicts safely.
+- [x] Expose a concise next-DM confirmation payload that Bobby can poll and render after binding completion.
+- [x] Create and validate focused portal and contract tests for binding review and conflict resolution.
+- [x] Prepare exact handoff instructions for the Slack-side Bobby implementation.
+- [x] Add an automated UI-route contract test for the Binding Review screen and its decision controls.
+- [x] Create a checked-in Bobby handoff document covering account binding, polling, and next-DM confirmation delivery.

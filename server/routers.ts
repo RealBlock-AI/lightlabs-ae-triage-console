@@ -13,6 +13,7 @@ import { listIntegrationAudit } from "./integrationAudit";
 import { recordIntegrationAudit } from "./integrationAudit";
 import { listIngestPolicies, setIngestPolicy } from "./ingestPolicy";
 import { listExternalSlackIdentityCandidates } from "./externalIdentity";
+import { listBindingReviews, reviewBinding } from "./accountBinding";
 import { ensurePrototypeSeed } from "./prototypeSeed";
 import { createStructuredIntake, getPrototypeItem, getPrototypeQueue, runPrototypeTriage } from "./prototype";
 import { capacityMultiple } from "./domain";
@@ -115,6 +116,10 @@ export const appRouter = router({
       await recordIntegrationAudit({ surface: "bobby", eventType: "identity_write_staged", outcome: "accepted", statusCode: 201, slackWorkspaceId: input.slackWorkspaceId, slackUserId: input.slackUserId, metadata: { accountId: input.accountId, contactId: identity.id, writtenByUserId: ctx.user.id, verificationState: "pending_exact_hubspot_email" } });
       return { ...identity, disposition: "pending_exact_hubspot_email" as const };
     }),
+  }),
+  bindingReview: router({
+    list: adminProcedure.input(z.object({ bindingId: z.string().min(7).max(128).optional() }).optional()).query(({ input }) => listBindingReviews(input)),
+    decide: adminProcedure.input(z.object({ bindingId: z.string().min(7).max(128), action: z.enum(["approve", "reject", "resolve_conflict"]), message: z.string().max(500).optional() })).mutation(({ input, ctx }) => reviewBinding({ ...input, reviewedByUserId: String(ctx.user.id) })),
   }),
   lims: router({ status: publicProcedure.query(() => getLimsConnectionStatus()) }),
   mcpAccess: router({
