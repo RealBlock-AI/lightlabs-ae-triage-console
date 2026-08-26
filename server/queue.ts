@@ -83,40 +83,6 @@ export function categoryLabel(intents: unknown): string {
   return first ? CATEGORY_LABEL[first] : CATEGORY_LABEL.UNKNOWN;
 }
 
-/* -------------------------------------------------------------------------
-   The clock.
-
-   Two different promises live on an interaction and they are not the same
-   number. slaMinutes is the resolution target (15 / 30 / 60 by lane). The
-   clock the AE watches is the acknowledgement promise, and it is short - so
-   it is shown in minutes and seconds, and it turns the escalate colour under
-   a minute. Nothing else in the row changes.
-------------------------------------------------------------------------- */
-
-export const ACK_PROMISE_SECONDS = 120;
-
-export function ageMinutes(receivedAt: Date, now: Date): number {
-  return Math.max(0, Math.floor((now.getTime() - receivedAt.getTime()) / 60_000));
-}
-
-export function ageLabel(receivedAt: Date, now: Date): string {
-  const minutes = ageMinutes(receivedAt, now);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
-}
-
-/** Past this much overdue, a countdown stops being information. */
-const MISSED_AFTER_SECONDS = 60 * 60;
-
-export function ackClock(receivedAt: Date, now: Date, promiseSeconds = ACK_PROMISE_SECONDS) {
-  const elapsed = Math.floor((now.getTime() - receivedAt.getTime()) / 1000);
-  const remaining = promiseSeconds - elapsed;
-  // A four-digit negative countdown on a day-old row is noise, not urgency, and
-  // it drags the column wide enough to unbalance the table.
-  if (-remaining > MISSED_AFTER_SECONDS) return { label: "missed", urgent: true };
-  const shown = Math.abs(remaining);
-  const label = `${remaining < 0 ? "-" : ""}${Math.floor(shown / 60)}:${String(shown % 60).padStart(2, "0")}`;
-  // Under a minute left, or already past. Both want the AE's eye.
-  return { label, urgent: remaining < 60 };
-}
+/* The clocks now live in shared/clock.ts, because the packet ticks them in
+   the browser while the queue computes them on the server. */
+export { ackClock, ageLabel, ageMinutes, ACK_PROMISE_SECONDS } from "@shared/clock";

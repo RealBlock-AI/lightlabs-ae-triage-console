@@ -1,4 +1,5 @@
 import { CATEGORY_LANE, FORBIDDEN_IN_AUTO, INTENTS, type Intent, type Lane } from "./policy";
+import { categoryLabel } from "./queue";
 
 /**
  * The policy simulator.
@@ -59,8 +60,11 @@ export type SimulationResult = {
   changedItems: number;
   unsafeItems: number;
   breakdown: Array<{ code: RiskCode; label: string; count: number }>;
-  /** Ids of the unsafe items, so the AE can open them rather than trust a count. */
-  unsafeSample: string[];
+  /**
+   * The unsafe items themselves, so the count can be opened and checked rather
+   * than taken on trust. A number nobody can audit is just an assertion.
+   */
+  unsafeSample: Array<{ id: string; category: string; risks: string[] }>;
 };
 
 /**
@@ -73,7 +77,7 @@ export type SimulationResult = {
  */
 export function simulate(items: readonly PastItem[], proposals: Partial<Record<Intent, Lane>>): SimulationResult {
   const counts = new Map<RiskCode, number>();
-  const unsafeSample: string[] = [];
+  const unsafeSample: SimulationResult["unsafeSample"] = [];
   let considered = 0;
   let changed = 0;
   let unsafe = 0;
@@ -94,7 +98,9 @@ export function simulate(items: readonly PastItem[], proposals: Partial<Record<I
     const risks = risksIn(item);
     if (!risks.length) continue;
     unsafe += 1;
-    if (unsafeSample.length < 50) unsafeSample.push(item.id);
+    if (unsafeSample.length < 50) {
+      unsafeSample.push({ id: item.id, category: categoryLabel(item.intents), risks: risks.map(risk => RISK_LABEL[risk]) });
+    }
     for (const risk of risks) counts.set(risk, (counts.get(risk) ?? 0) + 1);
   }
 

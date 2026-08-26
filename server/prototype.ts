@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { accounts, contacts, interactions, orders, products, responseFeedback, tests, users } from "../drizzle/schema";
+import { accounts, clarifications, contacts, interactions, orders, products, responseFeedback, tests, users } from "../drizzle/schema";
 import { analytes, assayCompanyPrices, assays, companyMemberships, regulatoryLimits, samples, shipments, skus, specifications, stabilityStudies, stabilityStudyTimePoints, testLimits, testResults, turnaroundTimes } from "../drizzle/canonicalSchema";
 import { evaluateTest, formatCurrency, formatDate, formatNumber, formatStatus, stabilityStatus, summarizeTrend } from "./domain";
 import { getDb } from "./db";
@@ -267,6 +267,12 @@ export async function getPrototypeItem(id: string) {
         .where(and(eq(interactions.companyId, row.companyId), eq(interactions.status, "open"))))[0]?.count ?? 0)
     : 0;
 
+  // When the item is waiting on the customer the acknowledgement clock is
+  // paused, and the packet has to say so rather than keep counting.
+  const pendingClarification = row.status === "awaiting_customer"
+    ? (await db.select().from(clarifications).where(and(eq(clarifications.interactionId, row.id), isNull(clarifications.answeredAt))).orderBy(desc(clarifications.askedAt)).limit(1))[0]
+    : undefined;
+
   const posture: AccountPosture = {
     openOrders: mine.filter(order => isOpenOrder(order.status)).length,
     overdueOrders: mine.filter(order => isOverdueOrder(order, now)).length,
@@ -290,6 +296,9 @@ export async function getPrototypeItem(id: string) {
     category: categoryLabel(row.intents),
     posture,
     dualVerdict,
+    pendingQuestion: pendingClarification
+      ? { question: pendingClarification.question, askedAt: pendingClarification.askedAt }
+      : undefined,
   };
 }
 
@@ -323,7 +332,7 @@ export async function savePrototypeDraft(input: { id: string; draft: string }) {
   return { saved: true as const };
 }
 
-export async function decidePrototypeItem(input: { id: string; action: PacketAction; overrideReason?: string; sentText?: string; userId?: string }) {
+export async function decidePrototypeItem(input: { id: string; action: PacketAction; overrideReason?: string; question?: string; sentText?: string; userId?: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const row = (await db.select().from(interactions).where(eq(interactions.id, input.id)).limit(1))[0];
@@ -333,6 +342,11 @@ export async function decidePrototypeItem(input: { id: string; action: PacketAct
   // prevent, so it is refused on the server as well as disabled in the UI.
   const reason = input.overrideReason?.trim();
   if (input.action === "override" && !reason) throw new Error("An override requires a reason.");
+
+  // Asking the customer means asking something. An empty question would pause
+  // the clock without anyone having been asked anything.
+  const question = input.question?.trim();
+  if (input.action === "ask_customer" && !question) throw new Error("Asking the customer requires a question.");
 
   // auto_resolved means the system answered without a human. A human pressing
   // send on a reviewed draft, or overruling the lane outright, is "resolved" -
@@ -352,6 +366,16 @@ export async function decidePrototypeItem(input: { id: string; action: PacketAct
     resolvedBy: closed ? (input.userId ?? "usr_sarah") : null,
   }).where(eq(interactions.id, input.id));
 
+  if (question) {
+    await db.insert(clarifications).values({
+      id: `clr_${nanoid(16)}`,
+      interactionId: input.id,
+      question,
+      askedAt: now,
+      answeredAt: null,
+    });
+  }
+
   if (reason) {
     await db.insert(responseFeedback).values({
       id: `fb_${nanoid(16)}`,
@@ -367,7 +391,7 @@ export async function decidePrototypeItem(input: { id: string; action: PacketAct
     });
   }
 
-  return { status, recordedReason: Boolean(reason) };
+  return { status, recordedReason: Boolean(reason), askedQuestion: Boolean(question) };
 }
 
 /**

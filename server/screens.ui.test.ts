@@ -64,3 +64,18 @@ describe("Navigation", () => {
     }
   });
 });
+
+describe("Simulator sample list", () => {
+  it("opens the unsafe items as a list, so the count can be audited", async () => {
+    const [page, model] = await Promise.all([
+      read("client/src/pages/Policy.tsx"),
+      read("server/simulator.ts"),
+    ]);
+    // Each sampled item carries why it is unsafe, not just an id.
+    expect(model).toContain("unsafeSample: Array<{ id: string; category: string; risks: string[] }>");
+    expect(page).toContain("hide the sample");
+    expect(page).toContain("entry.risks.join");
+    // A truncated sample says it is truncated rather than reading as complete.
+    expect(page).toContain("showing {result.unsafeSample.length} of {result.unsafeItems}");
+  });
+});

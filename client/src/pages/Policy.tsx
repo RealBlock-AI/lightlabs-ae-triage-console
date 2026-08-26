@@ -32,6 +32,7 @@ const CATEGORIES: Array<{ intent: string; label: string; live: Lane }> = [
 export default function Policy() {
   const [, navigate] = useLocation();
   const [proposals, setProposals] = useState<Record<string, Lane>>({});
+  const [sampling, setSampling] = useState(false);
 
   const moved = useMemo(
     () => CATEGORIES.filter(row => proposals[row.intent] && proposals[row.intent] !== row.live),
@@ -140,18 +141,41 @@ export default function Policy() {
                 {result?.unsafeSample.length ? (
                   <button
                     className="lane-badge lane-escalate px-2.5 py-1"
-                    onClick={() => navigate(`/interactions/${result.unsafeSample[0]}`)}
+                    aria-expanded={sampling}
+                    onClick={() => setSampling(open => !open)}
                   >
-                    sample the {result.unsafeItems}
+                    {sampling ? "hide the sample" : `sample the ${result.unsafeItems}`}
                   </button>
                 ) : null}
                 <button
                   className="lane-badge border-[#cfdbd2] bg-transparent px-2.5 py-1 text-[#60766c]"
-                  onClick={() => setProposals({})}
+                  onClick={() => { setProposals({}); setSampling(false); }}
                 >
                   reset to live
                 </button>
               </div>
+
+              {/* The count is only worth anything if it can be opened. */}
+              {sampling && result?.unsafeSample.length ? (
+                <ul className="mt-3 border-t border-dashed border-[#a3aea8] pt-2">
+                  {result.unsafeSample.map(entry => (
+                    <li key={entry.id} className="border-b border-[#e4ebe5] last:border-b-0">
+                      <button
+                        className="w-full py-1.5 text-left hover:bg-[#eef5f0]"
+                        onClick={() => navigate(`/interactions/${entry.id}`)}
+                      >
+                        <span className="block text-[12px] text-[#28372f]">{entry.category}</span>
+                        <span className="data block text-[10px] text-[#8a968f]">{entry.risks.join(" · ")}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {result.unsafeItems > result.unsafeSample.length && (
+                    <li className="data py-1.5 text-[10px] text-[#8a968f]">
+                      showing {result.unsafeSample.length} of {result.unsafeItems}
+                    </li>
+                  )}
+                </ul>
+              ) : null}
             </div>
           )}
         </aside>

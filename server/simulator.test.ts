@@ -50,7 +50,10 @@ describe("policy simulator", () => {
     const result = simulate(items, { OOS_RESULT: "auto" });
     expect(result.changedItems).toBe(3);
     expect(result.unsafeItems).toBe(2);
-    expect(result.unsafeSample).toEqual(["a", "b"]);
+    expect(result.unsafeSample.map(entry => entry.id)).toEqual(["a", "b"]);
+    // Each sampled item says why it is unsafe, so the count can be audited.
+    expect(result.unsafeSample[0].risks).toEqual(["currency figure in draft"]);
+    expect(result.unsafeSample[1].risks).toEqual(["contested serving basis"]);
     expect(result.breakdown.map(entry => entry.code).sort()).toEqual(["contested_serving_basis", "currency_figure"]);
   });
 

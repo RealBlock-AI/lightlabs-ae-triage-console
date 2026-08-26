@@ -1,5 +1,6 @@
 import Verdict from "@/components/Verdict";
 import { LANE, laneBadgeClass, type Lane } from "@/lib/lane";
+import { ackClock } from "@shared/clock";
 import { trpc } from "@/lib/trpc";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -48,8 +49,11 @@ export default function PrototypeInteraction() {
 
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [reason, setReason] = useState("");
-  const [askingReason, setAskingReason] = useState(false);
+  // Two actions need words before they can happen. One panel serves both.
+  const [composing, setComposing] = useState<null | "override" | "ask_customer">(null);
+  const [words, setWords] = useState("");
+  // The acknowledgement clock is live, so it ticks.
+  const [now, setNow] = useState(() => new Date());
   const loadedFor = useRef<string>("");
 
   const saveDraft = trpc.prototype.saveDraft.useMutation({
@@ -69,10 +73,15 @@ export default function PrototypeInteraction() {
 
   // Escape returns to the queue.
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !askingReason) navigate("/"); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !composing) navigate("/"); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate, askingReason]);
+  }, [navigate, composing]);
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(tick);
+  }, []);
 
   if (itemQuery.isLoading) return <div className="p-8 text-[13px] text-[#60766c]">Loading the packet…</div>;
   if (!item) return (
@@ -86,10 +95,19 @@ export default function PrototypeInteraction() {
   const evidence = (item.evidence ?? []) as EvidenceEntry[];
   const received = new Date(item.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const config = ACTIONS[lane];
+  const paused = Boolean(item.pendingQuestion);
+  const clock = ackClock(new Date(item.receivedAt), now);
 
   const run = (action: "send" | "ask_customer" | "resolve" | "override") => {
-    if (action === "override" && !reason.trim()) { setAskingReason(true); return; }
-    decide.mutate({ id: item.id, action, sentText: draft, overrideReason: action === "override" ? reason.trim() : undefined });
+    // Both of these need words first, and neither can be submitted empty.
+    if ((action === "override" || action === "ask_customer") && !words.trim()) { setComposing(action); return; }
+    decide.mutate({
+      id: item.id,
+      action,
+      sentText: draft,
+      overrideReason: action === "override" ? words.trim() : undefined,
+      question: action === "ask_customer" ? words.trim() : undefined,
+    });
   };
 
   return (
@@ -107,7 +125,13 @@ export default function PrototypeInteraction() {
           <p className="data text-[11px] text-[#67746e]">
             {item.contact} · tier {item.tier} · {item.category} · received {received}
           </p>
-          <p className="data text-[11px] text-[#67746e]">sla {item.slaMinutes}m</p>
+          {/* The clock the AE watches, not the resolution target. It pauses
+              outright while the customer has the question. */}
+          {paused ? (
+            <p className="data text-[11px] text-[#67746e]">sla paused · waiting on customer</p>
+          ) : (
+            <p className={`data text-[11px] ${clock.urgent ? "lane-ink-escalate" : "text-[#67746e]"}`}>sla {clock.label}</p>
+          )}
         </div>
       </header>
 
@@ -213,28 +237,38 @@ export default function PrototypeInteraction() {
             </button>
           </div>
 
-          {askingReason && (
-            <article className="lane-escalate border px-3.5 py-3">
-              <label className="data block text-[10px] uppercase tracking-[.13em]" htmlFor="override-reason">
-                Override reason — required
+          {composing && (
+            <article className={`${composing === "override" ? "lane-escalate" : "lane-assisted"} border px-3.5 py-3`}>
+              <label className="data block text-[10px] uppercase tracking-[.13em]" htmlFor="compose">
+                {composing === "override" ? "Override reason — required" : "Question for the customer — required"}
               </label>
+              {composing === "ask_customer" && (
+                <p className="mt-1 text-[11px] leading-[1.4] opacity-80">
+                  This moves the question to a waiting state and pauses the acknowledgement clock.
+                </p>
+              )}
               <textarea
-                id="override-reason"
+                id="compose"
                 autoFocus
-                className="mt-1.5 block min-h-[64px] w-full resize-y border border-[#b4762a] bg-white px-2.5 py-2 text-[12px] leading-[1.5] text-[#28372f] outline-none"
-                value={reason}
-                onChange={event => setReason(event.target.value)}
-                placeholder="Why are you overriding the lane the system chose?"
+                className="mt-1.5 block min-h-[64px] w-full resize-y border border-current bg-white px-2.5 py-2 text-[12px] leading-[1.5] text-[#28372f] outline-none"
+                value={words}
+                onChange={event => setWords(event.target.value)}
+                placeholder={composing === "override"
+                  ? "Why are you overriding the lane the system chose?"
+                  : "What do you need the customer to confirm?"}
               />
               <div className="mt-2 flex gap-2">
                 <button
                   className="action-primary !rounded-[5px] !py-1.5 !text-[12px]"
-                  disabled={!reason.trim() || decide.isPending}
-                  onClick={() => run("override")}
+                  disabled={!words.trim() || decide.isPending}
+                  onClick={() => run(composing)}
                 >
-                  Record override
+                  {composing === "override" ? "Record override" : "Send question"}
                 </button>
-                <button className="action-secondary !rounded-[5px] !py-1.5 !text-[12px]" onClick={() => { setAskingReason(false); setReason(""); }}>
+                <button
+                  className="action-secondary !rounded-[5px] !py-1.5 !text-[12px]"
+                  onClick={() => { setComposing(null); setWords(""); }}
+                >
                   Cancel
                 </button>
               </div>

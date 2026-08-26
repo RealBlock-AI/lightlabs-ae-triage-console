@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ackClock, ageLabel, categoryLabel, tierFor, tierRank } from "./queue";
+import { ackClock, ageLabel } from "@shared/clock";
+import { categoryLabel, tierFor, tierRank } from "./queue";
 
 describe("queue row projection", () => {
   /**

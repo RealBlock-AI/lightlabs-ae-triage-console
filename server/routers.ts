@@ -61,6 +61,8 @@ export const appRouter = router({
       action: z.enum(["send", "ask_customer", "resolve", "override"]),
       // An override reason cannot be empty. Enforced here as well as in the UI.
       overrideReason: z.string().trim().min(1).optional(),
+      // Likewise: asking the customer means asking something.
+      question: z.string().trim().min(1).max(2000).optional(),
       sentText: z.string().max(20000).optional(),
     })).mutation(({ input }) => decidePrototypeItem(input)),
     run: publicProcedure.input(z.object({ userId: z.enum(["northwind", "lumen", "coman", "denied"]), text: z.string().min(3).max(4000), attachmentsPresent: z.boolean().optional() })).mutation(async ({ input }) => {
