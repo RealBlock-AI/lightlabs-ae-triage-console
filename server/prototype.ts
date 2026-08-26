@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { accounts, contacts, interactions, orders, products, tests, users } from "../drizzle/schema";
 import { analytes, assayCompanyPrices, assays, companyMemberships, regulatoryLimits, samples, shipments, skus, specifications, stabilityStudies, stabilityStudyTimePoints, testLimits, testResults, turnaroundTimes } from "../drizzle/canonicalSchema";
@@ -8,7 +8,9 @@ import { assertResultVisible, ResultVisibilityError } from "./permissions";
 import { AUTO_CONFIDENCE_FLOOR, baseLane, declareGateChecks, demoteLane, enforceAutoLaneOutput, gateTrace, GENERAL_CONFIDENCE_FLOOR, INTENTS, operationalIntent, type GateTraceBuilder, type Intent, type Lane } from "./policy";
 import { ensurePrototypeSeed } from "./prototypeSeed";
 import { getKnowledgeDocument, retrieveKnowledge } from "./knowledge";
+import { isOpenOrder, isOverdueOrder, orderBelongsTo, type AccountPosture } from "./posture";
 import { ackClock, ageLabel, ageMinutes, categoryLabel, tierFor, tierRank, type QueueRow } from "./queue";
+import { toDualVerdict, type DualVerdict } from "./verdict";
 
 type EvidenceItem = { label: string; value: string; source: string; citable: boolean; advisory?: boolean; refusalCode?: string };
 type Classification = { intents: Intent[]; confidence: number; sampleLabel?: string; analyteName?: string; productName?: string; destinationStates: string[]; statedClaim?: { value: number; unit: string } };
@@ -228,7 +230,67 @@ export async function getPrototypeQueue(): Promise<QueueRow[]> {
     || tierRank(a.tier) - tierRank(b.tier)
     || b.ageMinutes - a.ageMinutes);
 }
-export async function getPrototypeItem(id: string) { const db = await getDb(); if (!db) return undefined; return (await db.select().from(interactions).where(eq(interactions.id, id)).limit(1))[0]; }
+/**
+ * One question, and everything needed to act on it - no second tab.
+ *
+ * The packet is assembled in a single call on purpose: it must not wait on a
+ * waterfall of requests to become readable.
+ */
+export async function getPrototypeItem(id: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const row = (await db.select().from(interactions).where(eq(interactions.id, id)).limit(1))[0];
+  if (!row) return undefined;
+
+  const account = row.companyId
+    ? (await db.select().from(accounts).where(eq(accounts.testingPlatformAccountId, row.companyId)).limit(1))[0]
+    : undefined;
+  const contact = row.contactId
+    ? (await db.select().from(contacts).where(eq(contacts.id, row.contactId)).limit(1))[0]
+    : undefined;
+  // Rows written before contact resolution carry no contact_id; fall back to
+  // the requesting user so the packet header names a person.
+  const requester = !contact && row.requestingUserId
+    ? (await db.select().from(users).where(eq(users.id, row.requestingUserId)).limit(1))[0]
+    : undefined;
+
+  // The orders table is inconsistent about which identifier it stores, so match
+  // on every identifier this account is known by.
+  const identifiers = [row.companyId, row.accountId, account?.id];
+  const orderRows = await db.select().from(orders);
+  const mine = orderRows.filter(order => orderBelongsTo(order, identifiers));
+  const now = new Date();
+
+  const openQuestions = row.companyId
+    ? Number((await db.select({ count: sql<number>`count(*)` }).from(interactions)
+        .where(and(eq(interactions.companyId, row.companyId), eq(interactions.status, "open"))))[0]?.count ?? 0)
+    : 0;
+
+  const posture: AccountPosture = {
+    openOrders: mine.filter(order => isOpenOrder(order.status)).length,
+    overdueOrders: mine.filter(order => isOverdueOrder(order, now)).length,
+    openQuestions,
+    hasLogin: Boolean(contact?.hasPlatformLogin),
+  };
+
+  // Two defensible answers, when the evaluator found them. Rows written before
+  // the applied bound was carried project to undefined, and the packet falls
+  // back to the ordinary single readout.
+  const verdict = row.domainComputations as Parameters<typeof toDualVerdict>[0] | null;
+  const dualVerdict: DualVerdict | undefined = verdict
+    ? toDualVerdict(verdict, { analyte: "lead", resultRef: row.id })
+    : undefined;
+
+  return {
+    ...row,
+    account: account?.name ?? "Unmapped account",
+    contact: contact?.name ?? requester?.name ?? "Unresolved contact",
+    tier: tierFor(account),
+    category: categoryLabel(row.intents),
+    posture,
+    dualVerdict,
+  };
+}
 
 export async function createStructuredIntake(input: { requestingUserId: number; companyId: string; productName: string; skuCode: string; category: string; availableSampleGrams?: number; analyteName: string; limitValue?: number; limitUnit?: string; limitBasis?: "per_serving" | "per_kg" | "per_capsule" | "per_100g"; source: string }) {
   await ensurePrototypeSeed(); const db = await getDb(); if (!db) throw new Error("Database unavailable");

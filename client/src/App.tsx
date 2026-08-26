@@ -11,9 +11,10 @@ import Integrations from "./pages/Integrations";
 import PrototypeConsole from "./pages/PrototypeConsole";
 import PrototypeInteraction from "./pages/PrototypeInteraction";
 import SupportPerformance from "./pages/SupportPerformance";
+import VerdictFixtures from "./pages/VerdictFixtures";
 
 function Router() {
-  return <DashboardLayout><Switch><Route path="/" component={PrototypeConsole}/><Route path="/mappings" component={AccountMapping}/><Route path="/bindings/:bindingId" component={BindingReview}/><Route path="/bindings" component={BindingReview}/><Route path="/interactions/:id" component={PrototypeInteraction}/><Route path="/performance" component={SupportPerformance}/><Route path="/integrations" component={Integrations}/><Route path="/404" component={NotFound}/><Route component={NotFound}/></Switch></DashboardLayout>;
+  return <DashboardLayout><Switch><Route path="/" component={PrototypeConsole}/><Route path="/mappings" component={AccountMapping}/><Route path="/bindings/:bindingId" component={BindingReview}/><Route path="/bindings" component={BindingReview}/><Route path="/interactions/:id" component={PrototypeInteraction}/><Route path="/performance" component={SupportPerformance}/><Route path="/integrations" component={Integrations}/><Route path="/verdict-fixtures" component={VerdictFixtures}/><Route path="/404" component={NotFound}/><Route component={NotFound}/></Switch></DashboardLayout>;
 }
 
 export default function App() {
