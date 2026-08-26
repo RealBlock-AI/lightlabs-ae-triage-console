@@ -10,6 +10,7 @@ import { ensurePrototypeSeed } from "./prototypeSeed";
 import { getKnowledgeDocument, retrieveKnowledge } from "./knowledge";
 import { isOpenOrder, isOverdueOrder, orderBelongsTo, type AccountPosture } from "./posture";
 import { ackClock, ageLabel, ageMinutes, categoryLabel, tierFor, tierRank, type QueueRow } from "./queue";
+import { simulate, type PastItem, type SimulationResult } from "./simulator";
 import { toDualVerdict, type DualVerdict } from "./verdict";
 
 type EvidenceItem = { label: string; value: string; source: string; citable: boolean; advisory?: boolean; refusalCode?: string };
@@ -367,4 +368,23 @@ export async function decidePrototypeItem(input: { id: string; action: PacketAct
   }
 
   return { status, recordedReason: Boolean(reason) };
+}
+
+/**
+ * Replay past interactions against a proposed lane mapping.
+ *
+ * Read-only by construction: this selects, it never writes, and the proposals
+ * exist only for the duration of the call. Live routing is untouched.
+ */
+export async function simulatePrototypePolicy(proposals: Partial<Record<Intent, Lane>>): Promise<SimulationResult> {
+  const db = await getDb();
+  if (!db) return { consideredItems: 0, changedItems: 0, unsafeItems: 0, breakdown: [], unsafeSample: [] };
+  const rows = await db.select({
+    id: interactions.id,
+    intents: interactions.intents,
+    lane: interactions.lane,
+    draft: interactions.draft,
+    evidence: interactions.evidence,
+  }).from(interactions).where(isNotNull(interactions.intents));
+  return simulate(rows as PastItem[], proposals);
 }
