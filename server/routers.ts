@@ -15,7 +15,7 @@ import { listIngestPolicies, setIngestPolicy } from "./ingestPolicy";
 import { listExternalSlackIdentityCandidates } from "./externalIdentity";
 import { listBindingReviews, reviewBinding } from "./accountBinding";
 import { ensurePrototypeSeed } from "./prototypeSeed";
-import { createStructuredIntake, getPrototypeItem, getPrototypeQueue, runPrototypeTriage } from "./prototype";
+import { createStructuredIntake, decidePrototypeItem, getPrototypeItem, getPrototypeQueue, runPrototypeTriage, savePrototypeDraft, simulatePrototypePolicy } from "./prototype";
 import { capacityMultiple } from "./domain";
 import { getLimsConnectionStatus } from "./lims";
 import { DEMO_FIELDS, demoStatus, filterDemoProperties, getBySlackIdentity, getDemoAccount, getDemoContact, getVerificationClaim, listDemoCompanies, listDemoContacts, listDemoDeals, listDemoFields, listDemoPolicies, previewVerification, seedDemoHubSpot, updateDemoContactField, upsertDemoRecord, verifyClaim, type VerificationClaim } from "./demoHubspot";
@@ -51,6 +51,18 @@ export const appRouter = router({
     bootstrap: publicProcedure.mutation(async () => { await ensurePrototypeSeed(); return { success: true }; }),
     queue: publicProcedure.query(() => getPrototypeQueue()),
     item: publicProcedure.input(z.object({ id: z.string().min(1) })).query(({ input }) => getPrototypeItem(input.id)),
+    // What-if only. This is a query, not a mutation, because it must never
+    // be able to change the routing policy it is modelling.
+    simulate: publicProcedure.input(z.object({ proposals: z.record(z.string(), laneSchema) }))
+      .query(({ input }) => simulatePrototypePolicy(input.proposals as never)),
+    saveDraft: publicProcedure.input(z.object({ id: z.string().min(1), draft: z.string().max(20000) })).mutation(({ input }) => savePrototypeDraft(input)),
+    decide: publicProcedure.input(z.object({
+      id: z.string().min(1),
+      action: z.enum(["send", "ask_customer", "resolve", "override"]),
+      // An override reason cannot be empty. Enforced here as well as in the UI.
+      overrideReason: z.string().trim().min(1).optional(),
+      sentText: z.string().max(20000).optional(),
+    })).mutation(({ input }) => decidePrototypeItem(input)),
     run: publicProcedure.input(z.object({ userId: z.enum(["northwind", "lumen", "coman", "denied"]), text: z.string().min(3).max(4000), attachmentsPresent: z.boolean().optional() })).mutation(async ({ input }) => {
       await ensurePrototypeSeed();
       const identity = { northwind: "U_NORTH_OPS", lumen: "U_LUMEN_QA", coman: "U_PINE_QC", denied: "U_DENIED" }[input.userId];

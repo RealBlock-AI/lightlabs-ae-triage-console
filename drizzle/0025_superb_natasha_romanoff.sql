@@ -1,0 +1,1 @@
+ALTER TABLE `interactions` ADD `gate_trace` json;

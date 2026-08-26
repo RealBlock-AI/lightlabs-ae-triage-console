@@ -47,3 +47,85 @@ export function enforceAutoLaneOutput(lane: Lane, text: string) {
   const hits = FORBIDDEN_IN_AUTO.filter(rule => rule.test.test(text));
   return hits.length ? { lane: "assisted" as Lane, demotions: hits.map(hit => `Auto-lane output guard ${hit.code}: ${hit.reason}`) } : { lane, demotions: [] as string[] };
 }
+
+/* ---------------------------------------------------------------------------
+   Gate trace.
+
+   The packet shows the checks in order, top to bottom, and the design is
+   explicit about what that list has to contain: passes are shown, not hidden;
+   the check that stopped is the only tinted row; and every check after the stop
+   is marked "not reached" rather than omitted, because its absence is itself
+   information.
+
+   A trace assembled from only the checks that happened to run cannot satisfy
+   that. So the list is declared up front from the intents, and the builder
+   below fills it in - which also makes the invariants structural: at most one
+   stop, nothing recorded after it, and the full declared list always emitted.
+--------------------------------------------------------------------------- */
+
+export const GATE_CHECKS = [
+  "identity_verified",
+  "result_ownership",
+  "limit_resolved",
+  "serving_basis_agreement",
+  "output_guard",
+] as const;
+
+export type GateCheck = (typeof GATE_CHECKS)[number];
+
+/** pass: the check ran and cleared. stop: it ran and halted the pipeline.
+ *  not_reached: an earlier check stopped first, so this one never ran. */
+export type GateStatus = "pass" | "stop" | "not_reached";
+
+export type GateTraceRow = {
+  check: GateCheck;
+  status: GateStatus;
+  /** What it read, or what it changed. Shown mono and muted, right-aligned. */
+  read: string;
+};
+
+/**
+ * Which checks apply to this interaction, in the order they run.
+ *
+ * Scoped by intent so the trace stays true: an order-status question has no
+ * result to own and no serving basis to agree on, and listing those as "not
+ * reached" would imply the pipeline stopped short when it did no such thing.
+ */
+export function declareGateChecks(intents: readonly Intent[]): GateCheck[] {
+  const reads = intents.some(intent => ["OOS_RESULT", "LABEL_CLAIM_VARIANCE"].includes(intent));
+  const limits = reads || intents.includes("REGULATORY_LIMIT_QUESTION");
+  const serving = intents.includes("OOS_RESULT");
+  return GATE_CHECKS.filter(check =>
+    check === "result_ownership" ? reads
+      : check === "limit_resolved" ? limits
+      : check === "serving_basis_agreement" ? serving
+      : true);
+}
+
+export type GateTraceBuilder = {
+  pass(check: GateCheck, read: string): void;
+  stop(check: GateCheck, read: string): void;
+  stopped(): boolean;
+  rows(): GateTraceRow[];
+};
+
+export function gateTrace(declared: readonly GateCheck[]): GateTraceBuilder {
+  const recorded = new Map<GateCheck, GateTraceRow>();
+  const applies = new Set(declared);
+  let halted = false;
+
+  const record = (check: GateCheck, status: GateStatus, read: string) => {
+    // Once something has stopped, nothing further ran - so nothing further is
+    // recorded, whatever the caller does next.
+    if (halted || !applies.has(check)) return;
+    recorded.set(check, { check, status, read });
+    if (status === "stop") halted = true;
+  };
+
+  return {
+    pass: (check, read) => record(check, "pass", read),
+    stop: (check, read) => record(check, "stop", read),
+    stopped: () => halted,
+    rows: () => declared.map(check => recorded.get(check) ?? { check, status: "not_reached", read: "not reached" }),
+  };
+}

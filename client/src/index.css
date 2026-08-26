@@ -1,6 +1,53 @@
 @import "tailwindcss";
 
-@theme inline { --font-serif: Georgia, Cambria, "Times New Roman", serif; }
+@theme inline {
+  --font-serif: Georgia, Cambria, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   Lane semantics.
+
+   Three states, meant to be tellable apart from across a desk:
+     auto      settled, resolved, nothing needed
+     assisted  ready and waiting on you, not alarming
+     escalate  attention needed - and NOT an error
+
+   Escalate is amber, never red. An escalation means the system correctly
+   recognised its own limit, which is the system working. True error styling
+   (--destructive) stays reserved for actual failures: a database timeout, a
+   broken record. It is deliberately not part of this scale.
+
+   These values are the design handoff's placeholders. Every lane colour in the
+   app resolves through these variables, so the hi-fi pass changes them here and
+   nowhere else.
+--------------------------------------------------------------------------- */
+:root {
+  --lane-auto-ink: #4e5b55;     --lane-auto-bg: #f0f2f0;     --lane-auto-line: #7d8a84;
+  --lane-assisted-ink: #2d5382; --lane-assisted-bg: #eaf1f9; --lane-assisted-line: #3f6ea8;
+  --lane-escalate-ink: #8a5713; --lane-escalate-bg: #fbf2e3; --lane-escalate-line: #b4762a;
+}
+.dark {
+  --lane-auto-ink: #a5b2aa;     --lane-auto-bg: #212724;     --lane-auto-line: #525c56;
+  --lane-assisted-ink: #8ab2e0; --lane-assisted-bg: #1a2432; --lane-assisted-line: #3f5f8c;
+  --lane-escalate-ink: #dda75f; --lane-escalate-bg: #2c2417; --lane-escalate-line: #7a5a26;
+}
+
+/* Tinted fill + ink + border. Used by badges and by any panel that takes a lane. */
+.lane-auto     { color: var(--lane-auto-ink);     background: var(--lane-auto-bg);     border-color: var(--lane-auto-line); }
+.lane-assisted { color: var(--lane-assisted-ink); background: var(--lane-assisted-bg); border-color: var(--lane-assisted-line); }
+.lane-escalate { color: var(--lane-escalate-ink); background: var(--lane-escalate-bg); border-color: var(--lane-escalate-line); }
+
+/* Ink only. For text that takes the lane colour without a fill - an SLA under a
+   minute, the deciding values in the verdict gutter, the second simulator number. */
+.lane-ink-auto     { color: var(--lane-auto-ink); }
+.lane-ink-assisted { color: var(--lane-assisted-ink); }
+.lane-ink-escalate { color: var(--lane-escalate-ink); }
+
+/* Data type role. The monospace is structural, not decorative: field names must
+   look unlike prose, and digits must hold their column as values change. */
+.tnum { font-variant-numeric: tabular-nums; }
+.data { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 * { box-sizing: border-box; }
 body { margin: 0; background: #f6f7f1; color: #13261f; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 button, input, textarea, select { font: inherit; }
@@ -10,7 +57,7 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .panel h2 { margin: 0; font-family: Georgia, Cambria, serif; font-size: 1.35rem; font-weight: 600; }.panel h3 { font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #60766c; }
 .message { white-space: pre-wrap; overflow: auto; border: 1px solid #dce5dc; border-radius: .7rem; background: #f9fbf9; padding: .9rem; font: .78rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #284137; }
 .filter-chip { border: 1px solid #cfdbd2; border-radius: 999px; background: white; padding: .42rem .8rem; font-size: .8rem; color: #456057; transition: .16s ease-out; }.filter-chip:hover { border-color: #176344; }.filter-chip-active { background: #176344; border-color: #176344; color: white; font-weight: 700; }
-.queue-table { width: 100%; border-collapse: collapse; font-size: .8rem; }.queue-table th { padding: .7rem .65rem; color: #60766c; font-size: .68rem; letter-spacing: .08em; text-align: left; text-transform: uppercase; }.queue-table td { border-top: 1px solid #e4ebe5; padding: .85rem .65rem; color: #385249; }.queue-table tbody tr:hover { background: #f3faf5; }.lane-badge { display: inline-block; border-radius: 999px; padding: .28rem .5rem; font-size: .62rem; font-weight: 900; letter-spacing: .09em; }
+.queue-table { width: 100%; border-collapse: collapse; font-size: .8rem; }.queue-table th { padding: .7rem .65rem; color: #60766c; font-size: .68rem; letter-spacing: .08em; text-align: left; text-transform: uppercase; }.queue-table td { border-top: 1px solid #e4ebe5; padding: .85rem .65rem; color: #385249; }.queue-table tbody tr:hover { background: #f3faf5; }.lane-badge { display: inline-block; border: 1px solid; border-radius: 5px; padding: .22rem .42rem; font-family: var(--font-mono); font-size: .62rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; }
 .action-primary, .action-secondary, .demo-button { display: inline-flex; align-items: center; gap: .45rem; border-radius: .6rem; padding: .62rem .85rem; font-size: .82rem; font-weight: 750; transition: transform .16s cubic-bezier(.23,1,.32,1), background .16s ease-out; }.action-primary:active, .action-secondary:active, .demo-button:active { transform: scale(.97); }.action-primary { background: #176344; color: white; }.action-primary:hover { background: #0e4a31; }.action-secondary { background: #e7f6eb; color: #176344; }.demo-button { background: #176344; color: white; }.demo-button:hover { background: #0e4a31; }
 .eyebrow { font-size: .72rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; color: #417062; }
 .field-label { display: block; margin-bottom: .45rem; font-size: .72rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #52685f; }
@@ -18,6 +65,16 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .field:focus { border-color: #176344; box-shadow: 0 0 0 3px rgba(23, 99, 68, .14); }
 .badge { display: inline-flex; align-items: center; gap: .25rem; border-radius: 999px; padding: .2rem .45rem; font-size: .65rem; font-weight: 800; letter-spacing: .06em; }
 table th { text-align: left; color: #60766c; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; } table td, table th { border-bottom: 1px solid #e5ebe5; padding: .75rem .4rem; } table td:last-child { text-align: right; }
+
+/* The queue table opts out of the generic table styling above. Those rules
+   right-align the last cell (which turns the full-width reason line into a
+   right-aligned orphan), rule every cell, and pad to a height that blows the
+   row-pair budget. Density is a feature here: the pair has to stay under
+   ~56px or fifty rows stop being scannable. */
+.qtable td, .qtable th, .qtable td:last-child { border-bottom: 0; padding: 0; text-align: left; }
+/* One tbody per queue item. Only the pair's last row is ruled, and lighter
+   than the header, so the record and its reason line read as one item. */
+.qtable tbody > tr:last-child > td { border-bottom: 1px solid #e4ebe5; }
 @media (prefers-reduced-motion: no-preference) { .panel, .queue-table tbody tr { animation: appear .22s cubic-bezier(.23,1,.32,1) both; } @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } } }
 @import "tw-animate-css";
 

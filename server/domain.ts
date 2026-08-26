@@ -15,7 +15,9 @@ export type Verdict = {
   agreement: "agrees" | "disagrees" | "not_computable";
   disagreementCause?: DisagreementCause;
   computed?: { value: number; unit: string; bound: number; boundType: "upper" | "lower"; percentOfBound: number; basis: string; servingSizeUsed?: { grams: number; source: "declared" | "lab_reported" } };
-  branches?: Array<{ servingSource: "declared" | "lab_reported"; grams: number; value: number; unit: string; passes: boolean }>;
+  branches?: Array<{ servingSource: "declared" | "lab_reported"; grams: number; value: number; unit: string; passes: boolean; percentOfBound: number }>;
+  /** The bound both branches were measured against. Present whenever branches are. */
+  appliedBound?: { value: number; type: "upper" | "lower"; unit: string };
   appliedLimit: { table: "test_limits" | "limit_groups"; source: string; customized: boolean };
   currentSpecDiffers: boolean;
   refusal?: Refusal;
@@ -51,7 +53,7 @@ function branch(value: number, resultUnit: string, limit: LimitInput, grams: num
   const bound = number(boundType === "upper" ? limit.upperBound : limit.lowerBound);
   const converted = convertToBasis(value, resultUnit, limit.limitUnit ?? "", limit.limitBasis ?? null, grams);
   if (typeof converted !== "number" || !bound || bound <= 0) return undefined;
-  return { servingSource: source, grams, value: round1(converted), unit: limit.limitUnit ?? resultUnit, passes: boundType === "upper" ? converted <= bound : converted >= bound };
+  return { servingSource: source, grams, value: round1(converted), unit: limit.limitUnit ?? resultUnit, passes: boundType === "upper" ? converted <= bound : converted >= bound, percentOfBound: round1((converted / bound) * 100) };
 }
 
 export function evaluateTest(input: { test: TestInput; result: ResultInput; testLimit?: LimitInput; sample: SampleInput; currentSpec: CurrentSpecInput; missingServingSize?: boolean; appliedTable?: "test_limits" | "limit_groups" }): Verdict {
@@ -69,7 +71,7 @@ export function evaluateTest(input: { test: TestInput; result: ResultInput; test
   if (input.missingServingSize || (needsServing && !declared && !lab)) return { specStatus: input.test.specStatus, agreement: "not_computable", disagreementCause: "missing_serving_size", appliedLimit, currentSpecDiffers, refusal: { code: "MISSING_SERVING_SIZE", reason: "The applied comparison requires a serving size, but no safe serving-size basis is available." } };
   if (needsServing && declared && lab && Math.abs(declared - lab) / Math.max(declared, lab) > 0.02) {
     const declaredBranch = branch(concentration, input.result.unit, limit, declared, "declared"); const labBranch = branch(concentration, input.result.unit, limit, lab, "lab_reported");
-    if (declaredBranch && labBranch && declaredBranch.passes !== labBranch.passes) return { specStatus: input.test.specStatus, agreement: "disagrees", disagreementCause: "serving_size_ambiguous", branches: [declaredBranch, labBranch], appliedLimit, currentSpecDiffers };
+    if (declaredBranch && labBranch && declaredBranch.passes !== labBranch.passes) return { specStatus: input.test.specStatus, agreement: "disagrees", disagreementCause: "serving_size_ambiguous", branches: [declaredBranch, labBranch], appliedBound: { value: bound, type: boundType, unit: limit.limitUnit }, appliedLimit, currentSpecDiffers };
   }
   const selectedServing = needsServing ? declared ?? lab : undefined;
   const value = convertToBasis(concentration, input.result.unit, limit.limitUnit, limit.limitBasis ?? null, selectedServing);
