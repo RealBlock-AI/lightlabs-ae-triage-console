@@ -1,20 +1,193 @@
-import { LANE, laneBadgeClass, type Lane } from "@/lib/lane";
-import { companyNames, demoSlackQueue, emailContext, isVerifiedSlackMessage, laneFromInteraction, type SupportQueueItem } from "@/lib/supportDemo";
+import { LANE, LANES_BY_URGENCY, laneBadgeClass, type Lane } from "@/lib/lane";
 import { trpc } from "@/lib/trpc";
-import { Bot, CheckCircle2, ChevronRight, Clock3, Mail, MessageSquare, UserRoundCheck } from "lucide-react";
-import { useEffect } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 
+/**
+ * Screen 1 - the queue.
+ *
+ * One row per open customer question, sorted by urgency, then account value,
+ * then age. Lane is a column, not a grouping, and sort is the only hierarchy,
+ * so rows never re-order under the AE's cursor.
+ *
+ * Every row is a pair: the record, and an indented reason line underneath. The
+ * reason line is the reason you never have to open a packet to find out why
+ * something routed.
+ */
+
+/** Widths as a proportion of the design's ~720px content area. */
+const COLUMNS = [
+  { key: "lane", label: "Lane", width: "10.3%" },
+  { key: "account", label: "Account", width: "18.3%" },
+  { key: "contact", label: "Contact", width: "13.3%" },
+  { key: "tier", label: "Tier", width: "4.7%" },
+  { key: "category", label: "Category", width: "16.4%" },
+  { key: "age", label: "Age", width: "5.6%" },
+  { key: "sla", label: "SLA", width: "7.2%" },
+  { key: "confidence", label: "Confidence", width: "auto" },
+] as const;
+
+function parseLanes(search: string): Lane[] {
+  const raw = new URLSearchParams(search).get("lane");
+  if (!raw) return [];
+  return raw.split(",").filter((value): value is Lane => LANES_BY_URGENCY.includes(value as Lane));
+}
 
 export default function PrototypeConsole() {
-  const [, navigate] = useLocation(); const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
+  const search = useSearch();
+  const utils = trpc.useUtils();
   const bootstrap = trpc.prototype.bootstrap.useMutation({ onSuccess: () => utils.prototype.queue.invalidate() });
   const queue = trpc.prototype.queue.useQuery();
   useEffect(() => { bootstrap.mutate(); }, []);
-  const liveItems = ((queue.data ?? []) as any[]).filter(isVerifiedSlackMessage).map((item): SupportQueueItem => ({ id: item.id, message: item.rawText, company: companyNames[item.companyId] ?? "Verified customer account", contact: "Verified Slack contact", receivedLabel: new Date(item.receivedAt).toLocaleString(), lane: laneFromInteraction(item), topic: Array.isArray(item.intents) ? item.intents[0]?.replaceAll("_", " ") ?? "Support request" : "Support request" }));
-  const items = (liveItems.length ? liveItems : demoSlackQueue).slice(0, 8);
-  const count = (lane: Lane) => items.filter(item => item.lane === lane).length;
-  const open = count("assisted"); const automated = count("auto"); const reviewed = count("escalate");
-  return <section className="mx-auto max-w-7xl p-5 md:p-10"><header className="grid gap-6 border-b border-slate-200 pb-8 lg:grid-cols-[1.25fr_.75fr]"><div><p className="eyebrow">SLACK SUPPORT · VERIFIED INBOUND</p><h1 className="mt-2 max-w-3xl font-serif text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">Questions from verified customers, ready for the right response.</h1><p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">This is the incoming Slack queue only. Every item is associated with a verified customer account before it can receive account context or enter an automated workflow.</p></div><aside className="rounded-2xl border border-violet-200 bg-violet-50 p-5"><MessageSquare className="text-violet-700" size={22}/><h2 className="mt-4 text-sm font-bold text-violet-950">Channel focus</h2><p className="mt-2 text-sm leading-6 text-violet-900">Slack is the only active support input in this prototype. Email appears below as related account context, not as a queue item or automation trigger.</p></aside></header><div className="mt-7 grid gap-4 sm:grid-cols-3"><QueueMetric icon={<Clock3 size={19}/>} label="Assisted" value={String(open)} detail="Researched, waiting on you"/><QueueMetric icon={<Bot size={19}/>} label="Auto" value={String(automated)} detail="Prepared and ready to send" tone="emerald"/><QueueMetric icon={<UserRoundCheck size={19}/>} label="Escalate" value={String(reviewed)} detail="Needs a human decision" tone="amber"/></div><div className="mt-7 grid gap-6 xl:grid-cols-[1.35fr_.65fr]"><section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><div><p className="eyebrow">INCOMING QUEUE</p><h2 className="mt-1 font-serif text-2xl font-semibold text-slate-950">Verified Slack questions</h2></div><button className="text-sm font-semibold text-emerald-700" onClick={() => queue.refetch()}>Refresh queue</button></div><div className="divide-y divide-slate-100">{queue.isLoading ? <p className="p-6 text-sm text-slate-500">Loading verified Slack questions…</p> : items.map(item => <button key={item.id} onClick={() => item.id.startsWith("slack-") ? undefined : navigate(`/interactions/${item.id}`)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-5 text-left transition hover:bg-emerald-50/40"><div><div className="flex flex-wrap items-center gap-2"><span className="badge bg-violet-100 text-violet-800"><MessageSquare size={11}/> Slack</span><span className="text-xs font-semibold text-slate-500">{item.topic}</span></div><p className="mt-3 font-semibold leading-6 text-slate-900">{item.message}</p><p className="mt-2 text-xs text-slate-500">{item.contact} · {item.company} · {item.receivedLabel}</p></div><div className="flex items-start gap-2"><span className={`h-fit ${laneBadgeClass(item.lane)}`}>{LANE[item.lane].label}</span>{!item.id.startsWith("slack-") && <ChevronRight className="mt-1 text-slate-400" size={17}/>}</div></button>)}</div></section><aside className="space-y-5"><article className="rounded-2xl border border-blue-200 bg-blue-50 p-5"><div className="flex items-center gap-2 text-blue-800"><Mail size={18}/><p className="text-xs font-bold tracking-[.12em]">RELATED EMAIL CONTEXT</p></div><h2 className="mt-3 font-serif text-xl font-semibold text-slate-950">{emailContext.subject}</h2><p className="mt-2 text-sm text-slate-600">{emailContext.sender} · {emailContext.received}</p><p className="mt-4 text-sm leading-6 text-slate-700">{emailContext.summary}</p><div className="mt-4 border-t border-blue-200 pt-4"><p className="text-xs font-bold uppercase tracking-[.1em] text-blue-700">Cross-referenced Slack inquiry</p><p className="mt-1 text-sm font-semibold text-slate-800">“{emailContext.linkedSlackQuestion}”</p></div></article><article className="rounded-2xl bg-slate-950 p-5 text-slate-100"><CheckCircle2 className="text-emerald-300" size={20}/><h2 className="mt-3 text-lg font-semibold">What is intentionally excluded</h2><p className="mt-2 text-sm leading-6 text-slate-300">No anonymous messages, no unverified Slack identities, and no email messages enter this queue. Those states require mapping or review before support triage begins.</p></article></aside></div></section>;
+
+  const active = parseLanes(search);
+  const [term, setTerm] = useState("");
+  const [selected, setSelected] = useState(0);
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const rows = queue.data ?? [];
+
+  const counts = useMemo(() => {
+    const tally: Record<Lane, number> = { auto: 0, assisted: 0, escalate: 0 };
+    for (const row of rows) tally[row.lane] += 1;
+    return tally;
+  }, [rows]);
+
+  const visible = useMemo(() => {
+    const needle = term.trim().toLowerCase();
+    return rows.filter(row => {
+      if (active.length && !active.includes(row.lane)) return false;
+      if (!needle) return true;
+      return [row.account, row.contact, row.category, row.reason].some(field => field.toLowerCase().includes(needle));
+    });
+  }, [rows, active, term]);
+
+  // A filtered queue is linkable, so the filter lives in the URL.
+  const toggleLane = (lane: Lane) => {
+    const next = active.includes(lane) ? active.filter(value => value !== lane) : [...active, lane];
+    navigate(next.length ? `/?lane=${next.join(",")}` : "/", { replace: true });
+    setSelected(0);
+  };
+
+  const open = (index: number) => {
+    const row = visible[index];
+    if (row) navigate(`/interactions/${row.id}`);
+  };
+
+  useEffect(() => { if (selected >= visible.length) setSelected(Math.max(0, visible.length - 1)); }, [visible.length, selected]);
+
+  // Keep the selection on screen. Without this, arrowing past the fold moves a
+  // selection the AE cannot see.
+  useEffect(() => {
+    tableRef.current?.querySelector(`[data-row="${selected}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); setSelected(index => Math.min(index + 1, visible.length - 1)); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); setSelected(index => Math.max(index - 1, 0)); }
+    else if (event.key === "Enter") { event.preventDefault(); open(selected); }
+  };
+
+  return (
+    <section className="mx-auto max-w-6xl px-5 py-7 md:px-8">
+      <header className="flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="font-serif text-2xl font-semibold tracking-tight">Queue</h1>
+        <div className="flex items-center gap-3">
+          <input
+            className="field data w-56 !py-1.5 text-[13px]"
+            placeholder="Search account, contact, reason"
+            value={term}
+            onChange={event => { setTerm(event.target.value); setSelected(0); }}
+            aria-label="Search the queue"
+          />
+          <p className="data text-[13px] text-[#60766c]">
+            <b className="text-[#13261f]">{visible.length}</b> open
+          </p>
+        </div>
+      </header>
+
+      <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Filter by lane">
+        {LANES_BY_URGENCY.map(lane => (
+          <button
+            key={lane}
+            onClick={() => toggleLane(lane)}
+            aria-pressed={active.includes(lane)}
+            className={`lane-badge ${active.includes(lane) ? LANE[lane].surface : "border-[#cfdbd2] bg-transparent text-[#60766c]"} px-2.5 py-1`}
+          >
+            {LANE[lane].label} <span className="tnum ml-1 opacity-70">{counts[lane]}</span>
+          </button>
+        ))}
+        <button
+          onClick={() => { navigate("/", { replace: true }); setSelected(0); }}
+          aria-pressed={active.length === 0}
+          className={`lane-badge px-2.5 py-1 ${active.length === 0 ? "border-[#176344] bg-[#e7f6eb] text-[#176344]" : "border-[#cfdbd2] bg-transparent text-[#60766c]"}`}
+        >
+          all <span className="tnum ml-1 opacity-70">{rows.length}</span>
+        </button>
+      </div>
+
+      <div
+        ref={tableRef}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        className="mt-4 overflow-x-auto rounded-[5px] border border-[#2b3531] outline-none focus-visible:ring-2 focus-visible:ring-[#176344]/35 lg:overflow-x-visible"
+      >
+        <table className="qtable w-full border-collapse text-left text-[13px]">
+          <colgroup>{COLUMNS.map(column => <col key={column.key} style={{ width: column.width }} />)}</colgroup>
+          <thead className="sticky top-0 z-10 bg-[#e9ede8]">
+            <tr>
+              {COLUMNS.map(column => (
+                <th key={column.key} className="whitespace-nowrap border-b border-[#2b3531] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[.11em] text-[#60766c]">
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          {queue.isLoading && <tbody><tr><td colSpan={COLUMNS.length} className="px-2.5 py-6 text-center text-[#60766c]">Loading the queue…</td></tr></tbody>}
+
+          {!queue.isLoading && !visible.length && (
+            <tbody><tr><td colSpan={COLUMNS.length} className="px-2.5 py-6 text-center text-[#60766c]">
+              No questions match this filter.
+            </td></tr></tbody>
+          )}
+
+          {visible.map((row, index) => (
+            // One tbody per item so hover and selection tint the whole pair.
+            <tbody
+              key={row.id}
+              data-row={index}
+              onClick={() => { setSelected(index); navigate(`/interactions/${row.id}`); }}
+              onMouseEnter={() => setSelected(index)}
+              className={`cursor-pointer transition-colors ${index === selected ? "bg-[#eef5f0]" : "hover:bg-[#f3faf5]"}`}
+            >
+              <tr>
+                <td className="px-2.5 pb-0 pt-1.5"><span className={laneBadgeClass(row.lane)}>{LANE[row.lane].label}</span></td>
+                <td className="data truncate px-2.5 pb-0 pt-1.5 text-[#13261f]">{row.account}</td>
+                <td className="truncate px-2.5 pb-0 pt-1.5 text-[#385249]">{row.contact}</td>
+                <td className="data px-2.5 pb-0 pt-1.5 text-[#385249]">{row.tier}</td>
+                <td className="truncate px-2.5 pb-0 pt-1.5 text-[#385249]">{row.category}</td>
+                <td className="data px-2.5 pb-0 pt-1.5 text-[#385249]">{row.ageLabel}</td>
+                {/* Under a minute takes the escalate colour. Nothing else in the row changes. */}
+                <td className={`data px-2.5 pb-0 pt-1.5 ${row.slaUrgent ? "lane-ink-escalate" : "text-[#385249]"}`}>{row.slaLabel}</td>
+                {/* Confidence is last, small and muted. It can only make routing
+                    stricter, never looser, so it never leads the row. */}
+                <td className="data px-2.5 pb-0 pt-1.5 text-[11px] text-[#8a968f]">{row.confidence === null ? "--" : row.confidence.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td colSpan={COLUMNS.length} className="truncate pb-1.5 pr-2.5 pt-0.5 text-[11px] leading-[1.3] text-[#67746e]" style={{ paddingLeft: "11.5%" }}>
+                  {row.reason}
+                </td>
+              </tr>
+            </tbody>
+          ))}
+        </table>
+      </div>
+
+      <p className="mt-3 text-[11px] text-[#8a968f]">
+        Arrow keys move the selection, Enter opens the packet.
+      </p>
+    </section>
+  );
 }
-function QueueMetric({ icon, label, value, detail, tone = "slate" }: { icon: React.ReactNode; label: string; value: string; detail: string; tone?: "slate" | "emerald" | "amber" }) { const colors = { slate: "bg-slate-100 text-slate-700", emerald: "bg-emerald-50 text-emerald-700", amber: "bg-amber-50 text-amber-700" }; return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><span className={`grid h-9 w-9 place-items-center rounded-xl ${colors[tone]}`}>{icon}</span><p className="mt-4 text-xs font-bold uppercase tracking-[.12em] text-slate-500">{label}</p><p className="mt-1 font-serif text-3xl font-semibold text-slate-950">{value}</p><p className="mt-1 text-sm text-slate-500">{detail}</p></article>; }
