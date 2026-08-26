@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isVerifiedSlackMessage, supportWorkflowFromInteraction } from "../client/src/lib/supportDemo";
+import { isVerifiedSlackMessage, laneFromInteraction } from "../client/src/lib/supportDemo";
 
 describe("support demo model", () => {
   it("keeps only company-scoped, non-email events in the Slack support queue", () => {
@@ -8,9 +8,12 @@ describe("support demo model", () => {
     expect(isVerifiedSlackMessage({ source: "slack_demo" })).toBe(false);
   });
 
-  it("labels auto, reviewed, and pending support workflows consistently", () => {
-    expect(supportWorkflowFromInteraction({ status: "auto_resolved", lane: "auto" })).toBe("AI resolved");
-    expect(supportWorkflowFromInteraction({ lane: "escalate" })).toBe("Human review");
-    expect(supportWorkflowFromInteraction({ lane: "unknown" })).toBe("In progress");
+  it("carries the stored lane through, and never downgrades an unknown one to auto", () => {
+    expect(laneFromInteraction({ lane: "auto" })).toBe("auto");
+    expect(laneFromInteraction({ lane: "assisted" })).toBe("assisted");
+    expect(laneFromInteraction({ lane: "escalate" })).toBe("escalate");
+    // An unclassifiable row is one a human should look at.
+    expect(laneFromInteraction({ lane: "unknown" })).toBe("escalate");
+    expect(laneFromInteraction({})).toBe("escalate");
   });
 });

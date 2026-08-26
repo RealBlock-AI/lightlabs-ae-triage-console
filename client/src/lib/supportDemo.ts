@@ -1,10 +1,12 @@
+import { type Lane, toLane } from "./lane";
+
 export type SupportQueueItem = {
   id: string;
   message: string;
   company: string;
   contact: string;
   receivedLabel: string;
-  workflow: "AI resolved" | "Human review" | "In progress";
+  lane: Lane;
   topic: string;
 };
 
@@ -15,9 +17,9 @@ export const companyNames: Record<string, string> = {
 };
 
 export const demoSlackQueue: SupportQueueItem[] = [
-  { id: "slack-northwind-order", message: "Can you confirm where our vanilla protein order is right now?", company: "Northwind Nutrition", contact: "Priya Shah", receivedLabel: "4 min ago", workflow: "AI resolved", topic: "Order status" },
-  { id: "slack-lumen-lot", message: "Lot 8812 came back at 12.4 ppb lead. Can you help us understand the result?", company: "Lumen Foods", contact: "Jordan Lee", receivedLabel: "18 min ago", workflow: "Human review", topic: "Result review" },
-  { id: "slack-pinecrest-coa", message: "When will the certificate for the Lumen run be ready to share with our team?", company: "Pinecrest Manufacturing", contact: "Alex Morgan", receivedLabel: "37 min ago", workflow: "In progress", topic: "Certificate request" },
+  { id: "slack-northwind-order", message: "Can you confirm where our vanilla protein order is right now?", company: "Northwind Nutrition", contact: "Priya Shah", receivedLabel: "4 min ago", lane: "assisted", topic: "Order status" },
+  { id: "slack-lumen-lot", message: "Lot 8812 came back at 12.4 ppb lead. Can you help us understand the result?", company: "Lumen Foods", contact: "Jordan Lee", receivedLabel: "18 min ago", lane: "escalate", topic: "Out of spec result" },
+  { id: "slack-pinecrest-coa", message: "When will the certificate for the Lumen run be ready to share with our team?", company: "Pinecrest Manufacturing", contact: "Alex Morgan", receivedLabel: "37 min ago", lane: "auto", topic: "Data export" },
 ];
 
 export const accountMappings = [
@@ -56,8 +58,13 @@ export function isVerifiedSlackMessage(interaction: { source?: unknown; companyI
   return Boolean(interaction.companyId ?? interaction.accountId) && !source.includes("email");
 }
 
-export function supportWorkflowFromInteraction(interaction: { status?: unknown; lane?: unknown }): SupportQueueItem["workflow"] {
-  if (interaction.status === "auto_resolved" || interaction.lane === "auto") return "AI resolved";
-  if (interaction.lane === "escalate" || interaction.lane === "assisted") return "Human review";
-  return "In progress";
+/**
+ * Read the routing lane off an interaction record.
+ *
+ * The lane is authoritative and stored; this only guards the shape. Anything
+ * unrecognised resolves to escalate rather than quietly rendering as auto -
+ * see toLane in ./lane.
+ */
+export function laneFromInteraction(interaction: { lane?: unknown }): Lane {
+  return toLane(interaction.lane);
 }
