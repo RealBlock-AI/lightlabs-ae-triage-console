@@ -9,7 +9,7 @@
 - [x] Validate schema parity, migration state, automated tests, and application startup.
 - [x] Validate the reconciled migration state, TypeScript compilation, and production build.
 - [x] Resolve the existing persistent-database test isolation conflicts before treating the full Vitest suite as green.
-- [ ] Save a checkpoint documenting the completed migration reconciliation.
+- [x] Save a checkpoint documenting the completed migration reconciliation.
 - [x] Provision a disposable database that is isolated from the shared application data.
 - [x] Apply the full Drizzle migration history to the disposable database.
 - [x] Run the database-backed Vitest suite against the disposable database.
