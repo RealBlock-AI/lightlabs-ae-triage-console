@@ -47,7 +47,7 @@ export default function Capacity() {
     <section className="mx-auto max-w-6xl px-5 py-7 md:px-8">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-serif text-2xl font-semibold tracking-tight">Capacity</h1>
-        <p className="data text-[11px] text-[#67746e]">automation raises the ceiling · it never removes it</p>
+        <p className="data text-[11px] text-ink-muted">automation raises the ceiling · it never removes it</p>
       </header>
 
       <div className="mt-5 flex flex-col gap-5 md:flex-row">
@@ -57,13 +57,13 @@ export default function Capacity() {
             {CONTROLS.map(control => (
               <div key={control.key}>
                 <div className="flex items-baseline justify-between gap-2">
-                  <label className="text-[11px] leading-[1.3] text-[#3d4841]" htmlFor={control.key}>{control.label}</label>
-                  <span className="data text-[11px] text-[#13261f]">{control.format(inputs[control.key])}</span>
+                  <label className="text-[11px] leading-[1.3] text-ink" htmlFor={control.key}>{control.label}</label>
+                  <span className="data text-[11px] text-ink-strong">{control.format(inputs[control.key])}</span>
                 </div>
                 <input
                   id={control.key}
                   type="range"
-                  className="mt-1.5 w-full accent-[#176344]"
+                  className="mt-1.5 w-full accent-ok"
                   min={control.min} max={control.max} step={control.step}
                   value={inputs[control.key]}
                   onChange={event => setInputs(prev => ({ ...prev, [control.key]: Number(event.target.value) }))}
@@ -72,11 +72,11 @@ export default function Capacity() {
             ))}
           </div>
 
-          <div className="mt-5 border-t border-dashed border-[#a3aea8] pt-3">
-            <p className="data text-[10px] uppercase tracking-[.13em] text-[#8a968f]">Ceiling</p>
-            <p className="font-serif text-[34px] font-semibold leading-none tracking-tight text-[#13261f]">{Math.round(ceiling)}</p>
-            <p className="data mt-1 text-[11px] text-[#67746e]">accounts</p>
-            <p className="data mt-3 text-[11px] text-[#67746e]">now {Math.round(current)}</p>
+          <div className="mt-5 border-t border-dashed border-line-strong pt-3">
+            <p className="data text-[10px] uppercase tracking-[.13em] text-ink-faint">Ceiling</p>
+            <p className="font-serif text-[34px] font-semibold leading-none tracking-tight text-ink-strong">{Math.round(ceiling)}</p>
+            <p className="data mt-1 text-[11px] text-ink-muted">accounts</p>
+            <p className="data mt-3 text-[11px] text-ink-muted">now {Math.round(current)}</p>
           </div>
         </div>
 
@@ -84,8 +84,8 @@ export default function Capacity() {
         <div className="min-w-0 flex-1">
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Accounts per AE against auto share, approaching a hard ceiling of ${Math.round(ceiling)}`}>
             {/* Axes as rules, no grid. */}
-            <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="#2b3531" strokeWidth="1.2" />
-            <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="#2b3531" strokeWidth="1.2" />
+            <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="var(--inverse-line)" strokeWidth="1.2" />
+            <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="var(--inverse-line)" strokeWidth="1.2" />
 
             {/* The ceiling. Dashed, in the escalate ink, labelled at its right end. */}
             <line
@@ -96,28 +96,28 @@ export default function Capacity() {
               hard ceiling {Math.round(ceiling)}
             </text>
 
-            <path d={path} fill="none" stroke="#176344" strokeWidth="2" />
+            <path d={path} fill="none" stroke="var(--ok)" strokeWidth="2" />
 
             {/* Where the current settings sit. */}
-            <circle cx={x(inputs.autoShare)} cy={y(current)} r="3.5" fill="#176344" />
+            <circle cx={x(inputs.autoShare)} cy={y(current)} r="3.5" fill="var(--ok)" />
             {/* Flip the point label to the inside near the right edge, where it
                 would otherwise collide with the ceiling label. */}
             <text
               x={x(inputs.autoShare) + (inputs.autoShare > 0.72 ? -7 : 7)}
               y={y(current) - 7}
-              fontSize="10" fontFamily="var(--font-mono)" fill="#13261f"
+              fontSize="10" fontFamily="var(--font-mono)" fill="var(--ink-strong)"
               textAnchor={inputs.autoShare > 0.72 ? "end" : "start"}
             >
               {Math.round(current)}
             </text>
 
             {[0, 0.25, 0.5, 0.75, 1].map(tick => (
-              <text key={tick} x={x(tick)} y={H - PAD_B + 14} fontSize="9" fontFamily="var(--font-mono)" fill="#8a968f" textAnchor={tick === 1 ? "end" : tick === 0 ? "start" : "middle"}>
+              <text key={tick} x={x(tick)} y={H - PAD_B + 14} fontSize="9" fontFamily="var(--font-mono)" fill="var(--ink-faint)" textAnchor={tick === 1 ? "end" : tick === 0 ? "start" : "middle"}>
                 {Math.round(tick * 100)}%
               </text>
             ))}
-            <text x={PAD_L} y={H - 4} fontSize="10" fontFamily="var(--font-mono)" fill="#67746e">auto share →</text>
-            <text x={PAD_L} y={PAD_T - 8} fontSize="9" fontFamily="var(--font-mono)" fill="#8a968f">accounts per AE</text>
+            <text x={PAD_L} y={H - 4} fontSize="10" fontFamily="var(--font-mono)" fill="var(--ink-muted)">auto share →</text>
+            <text x={PAD_L} y={PAD_T - 8} fontSize="9" fontFamily="var(--font-mono)" fill="var(--ink-faint)">accounts per AE</text>
           </svg>
         </div>
       </div>

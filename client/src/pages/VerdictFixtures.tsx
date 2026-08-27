@@ -57,15 +57,15 @@ export default function VerdictFixtures() {
   return (
     <section className="mx-auto max-w-3xl px-5 py-7 md:px-8">
       <h1 className="font-serif text-2xl font-semibold tracking-tight">Verdict — three situations</h1>
-      <p className="mt-2 max-w-[62ch] text-[13px] leading-6 text-[#60766c]">
+      <p className="mt-2 max-w-[62ch] text-[13px] leading-6 text-ink-muted">
         One component, taking everything as props. Same slab, same gutter, different variable.
         Neither branch may read as the real answer.
       </p>
       <div className="mt-6 grid gap-7">
         {FIXTURES.map(fixture => (
           <article key={fixture.title}>
-            <h2 className="data text-[11px] uppercase tracking-[.13em] text-[#3d4841]">{fixture.title}</h2>
-            <p className="mb-2 mt-1 text-[12px] text-[#67746e]">{fixture.note}</p>
+            <h2 className="data text-[11px] uppercase tracking-[.13em] text-ink">{fixture.title}</h2>
+            <p className="mb-2 mt-1 text-[12px] text-ink-muted">{fixture.note}</p>
             <Verdict {...fixture.props} />
           </article>
         ))}

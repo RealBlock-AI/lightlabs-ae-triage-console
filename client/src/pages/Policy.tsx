@@ -56,10 +56,10 @@ export default function Policy() {
 
       <div className="mt-5 grid gap-3 lg:grid-cols-[1.3fr_1fr]">
         {/* Left - the category table. */}
-        <article className="border border-[#2b3531]">
-          <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2">
-            <p className="data text-[10px] uppercase tracking-[.13em] text-[#3d4841]">Category</p>
-            <p className="data text-[10px] uppercase tracking-[.13em] text-[#3d4841]">Assigned lane</p>
+        <article className="border border-inverse-line">
+          <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-inverse-line bg-sunken-strong px-3.5 py-2">
+            <p className="data text-[10px] uppercase tracking-[.13em] text-ink">Category</p>
+            <p className="data text-[10px] uppercase tracking-[.13em] text-ink">Assigned lane</p>
           </div>
           {CATEGORIES.map(row => {
             const current = proposals[row.intent] ?? row.live;
@@ -67,9 +67,9 @@ export default function Policy() {
             return (
               <div
                 key={row.intent}
-                className={`grid grid-cols-[1fr_auto] items-center gap-3 border-b border-[#e4ebe5] px-3.5 py-1.5 last:border-b-0 ${changed ? "bg-[#fbf2e3]" : ""}`}
+                className={`grid grid-cols-[1fr_auto] items-center gap-3 border-b border-line px-3.5 py-1.5 last:border-b-0 ${changed ? "bg-warn-soft" : ""}`}
               >
-                <p className="text-[12px] text-[#28372f]">
+                <p className="text-[12px] text-ink">
                   {row.label}
                   {/* Nothing is saved, and a moved row keeps saying so. */}
                   {changed && <span className="data lane-ink-escalate ml-2 text-[10px]">moved · not saved</span>}
@@ -95,34 +95,34 @@ export default function Policy() {
         </article>
 
         {/* Right - the docked diff. */}
-        <aside className="h-fit border border-[#2b3531] bg-[#f4f6f2]">
+        <aside className="h-fit border border-inverse-line bg-sunken">
           {!moved.length ? (
             <div className="px-4 py-5">
-              <p className="data text-[10px] uppercase tracking-[.13em] text-[#8a968f]">No change proposed</p>
-              <p className="mt-2 text-[12px] leading-[1.5] text-[#67746e]">
+              <p className="data text-[10px] uppercase tracking-[.13em] text-ink-faint">No change proposed</p>
+              <p className="mt-2 text-[12px] leading-[1.5] text-ink-muted">
                 Move a category to a different lane to see what it would have done to the questions
                 that have already come in.
               </p>
             </div>
           ) : (
             <div className="px-4 py-4">
-              <p className="data text-[10px] uppercase tracking-[.13em] text-[#3d4841]">{headline}</p>
+              <p className="data text-[10px] uppercase tracking-[.13em] text-ink">{headline}</p>
 
-              <p className="mt-3 font-serif text-[34px] font-semibold leading-none tracking-tight text-[#13261f]">
+              <p className="mt-3 font-serif text-[34px] font-semibold leading-none tracking-tight text-ink-strong">
                 {simulation.isLoading ? "…" : (result?.changedItems ?? 0)}
               </p>
-              <p className="mt-1 text-[12px] leading-[1.45] text-[#67746e]">
+              <p className="mt-1 text-[12px] leading-[1.45] text-ink-muted">
                 of {result?.consideredItems ?? 0} past items would have routed differently
               </p>
 
-              <div className="my-3.5 border-t border-dashed border-[#a3aea8]" />
+              <div className="my-3.5 border-t border-dashed border-line-strong" />
 
               {/* The number that matters. The only display-size figure on the
                   screen carrying the escalate colour. */}
               <p className="lane-ink-escalate font-serif text-[34px] font-semibold leading-none tracking-tight">
                 {simulation.isLoading ? "…" : (result?.unsafeItems ?? 0)}
               </p>
-              <p className="mt-1 text-[12px] leading-[1.45] text-[#67746e]">
+              <p className="mt-1 text-[12px] leading-[1.45] text-ink-muted">
                 of those contained something that must not send automatically
               </p>
 
@@ -130,8 +130,8 @@ export default function Policy() {
                 <ul className="mt-3 flex flex-col gap-1">
                   {result.breakdown.map(entry => (
                     <li key={entry.code} className="flex items-baseline justify-between gap-3">
-                      <span className="data text-[11px] text-[#67746e]">{entry.label}</span>
-                      <span className="data text-[11px] text-[#28372f]">{entry.count}</span>
+                      <span className="data text-[11px] text-ink-muted">{entry.label}</span>
+                      <span className="data text-[11px] text-ink">{entry.count}</span>
                     </li>
                   ))}
                 </ul>
@@ -148,7 +148,7 @@ export default function Policy() {
                   </button>
                 ) : null}
                 <button
-                  className="lane-badge border-[#cfdbd2] bg-transparent px-2.5 py-1 text-[#60766c]"
+                  className="lane-badge border-line-strong bg-transparent px-2.5 py-1 text-ink-muted"
                   onClick={() => { setProposals({}); setSampling(false); }}
                 >
                   reset to live
@@ -157,20 +157,20 @@ export default function Policy() {
 
               {/* The count is only worth anything if it can be opened. */}
               {sampling && result?.unsafeSample.length ? (
-                <ul className="mt-3 border-t border-dashed border-[#a3aea8] pt-2">
+                <ul className="mt-3 border-t border-dashed border-line-strong pt-2">
                   {result.unsafeSample.map(entry => (
-                    <li key={entry.id} className="border-b border-[#e4ebe5] last:border-b-0">
+                    <li key={entry.id} className="border-b border-line last:border-b-0">
                       <button
-                        className="w-full py-1.5 text-left hover:bg-[#eef5f0]"
+                        className="w-full py-1.5 text-left hover:bg-sunken-strong"
                         onClick={() => navigate(`/interactions/${entry.id}`)}
                       >
-                        <span className="block text-[12px] text-[#28372f]">{entry.category}</span>
-                        <span className="data block text-[10px] text-[#8a968f]">{entry.risks.join(" · ")}</span>
+                        <span className="block text-[12px] text-ink">{entry.category}</span>
+                        <span className="data block text-[10px] text-ink-faint">{entry.risks.join(" · ")}</span>
                       </button>
                     </li>
                   ))}
                   {result.unsafeItems > result.unsafeSample.length && (
-                    <li className="data py-1.5 text-[10px] text-[#8a968f]">
+                    <li className="data py-1.5 text-[10px] text-ink-faint">
                       showing {result.unsafeSample.length} of {result.unsafeItems}
                     </li>
                   )}
