@@ -21,6 +21,7 @@ import { bobbyHealth, bobbyMcp } from "../bobby";
 import { bobbyAccountBinding, bobbyAccountBindingHealth } from "../accountBinding";
 import { nativeSlackIngest, verifyNativeSlackRequest as verifySlackRequest } from "../nativeIngest";
 import { mcpHttpHandler } from "../mcpHttp";
+import { completeSlackInstallation } from "../slackInstallations";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -65,7 +66,17 @@ async function startServer() {
       return res.status(400).json({ sources: [], error: error instanceof Error ? error.message : "Knowledge retrieval failed." });
     }
   });
-  app.post("/mcp", mcpHttpHandler);
+  app.all("/mcp", mcpHttpHandler);
+  app.get("/integrations/slack/oauth/callback", async (req, res) => {
+    if (typeof req.query.error === "string") return res.status(400).send("Slack installation was not completed.");
+    if (typeof req.query.code !== "string" || typeof req.query.state !== "string") return res.status(400).send("Missing Slack OAuth authorization code or state.");
+    try {
+      const installation = await completeSlackInstallation({ code: req.query.code, state: req.query.state });
+      return res.redirect(303, `/?slack_installed=${encodeURIComponent(installation.workspaceId)}`);
+    } catch (error) {
+      return res.status(400).send(error instanceof Error ? `Slack installation failed: ${error.message}` : "Slack installation failed.");
+    }
+  });
   app.get("/integrations/hubspot/callback", async (req, res) => {
     if (typeof req.query.error === "string") {
       return res.status(400).send("HubSpot authorization was not completed. Return to the Light Labs integration setup after resolving the HubSpot error.");

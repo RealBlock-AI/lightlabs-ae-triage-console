@@ -18,6 +18,7 @@ import { ensurePrototypeSeed } from "./prototypeSeed";
 import { createStructuredIntake, decidePrototypeItem, getPrototypeItem, getPrototypeQueue, runPrototypeTriage, savePrototypeDraft, simulatePrototypePolicy } from "./prototype";
 import { capacityMultiple } from "./domain";
 import { getLimsConnectionStatus } from "./lims";
+import { beginSlackInstallation, getSlackInstallationStatus } from "./slackInstallations";
 import { DEMO_FIELDS, demoStatus, filterDemoProperties, getBySlackIdentity, getDemoAccount, getDemoContact, getVerificationClaim, listDemoCompanies, listDemoContacts, listDemoDeals, listDemoFields, listDemoPolicies, previewVerification, seedDemoHubSpot, updateDemoContactField, upsertDemoRecord, verifyClaim, type VerificationClaim } from "./demoHubspot";
 import { getOwnerPortfolio, listOwnerPortfolios, seedOwnerPortfolios } from "./portfolioService";
 import { listSupportFields, listTestingPlatformFields } from "./referenceCatalog";
@@ -140,6 +141,10 @@ export const appRouter = router({
     pendingIdentities: adminProcedure.query(() => listMcpIdentityRequests()),
     teamMembers: adminProcedure.query(() => listInternalTeamMembers()),
     approveIdentity: adminProcedure.input(z.object({ requestId: z.string().min(1), teamMemberId: z.string().min(1) })).mutation(({ input }) => approveMcpIdentityRequest(input)),
+  }),
+  slackInstallation: router({
+    status: adminProcedure.query(() => getSlackInstallationStatus()),
+    begin: adminProcedure.mutation(({ ctx }) => beginSlackInstallation(String(ctx.user.id))),
   }),
   integrationAudit: router({ recent: adminProcedure.input(z.object({ surface: z.enum(["mcp", "slack_ingest"]).optional() }).optional()).query(({ input }) => listIntegrationAudit(input?.surface)) }),
   ingestPolicies: router({
