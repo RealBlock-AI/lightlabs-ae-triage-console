@@ -3,13 +3,22 @@
 -- WHY THIS EXISTS
 --
 -- The database holds the effects of every migration in drizzle/, but
--- __drizzle_migrations records only the first one (0000_aberrant_wonder_man).
--- The other 25 were applied by some other route and never journalled.
+-- __drizzle_migrations does not record them all. A partial reconcile on
+-- 2026-08-26 recorded 0000 through 0024 and stopped there, so 0025 and 0026
+-- are applied to the database and still absent from the journal.
 --
 -- The consequence: `drizzle-kit migrate` - and therefore `pnpm db:push` -
--- believes 0001 through 0025 are outstanding and tries to replay them over
--- tables that already exist. Every schema change has had to be applied by hand
--- because of it.
+-- believes the unrecorded migrations are outstanding and tries to replay them
+-- over a schema that already has them. 0025 is the one that actually breaks:
+--
+--   ALTER TABLE `interactions` ADD `gate_trace` json;
+--
+-- It carries no IF NOT EXISTS guard, so a replay fails outright with
+-- "Duplicate column name 'gate_trace'" and takes the whole migrate run with it.
+-- That is why every schema change so far has had to be applied by hand.
+--
+-- Run this whenever the count below disagrees with the number of entries in
+-- drizzle/meta/_journal.json. It is written to be run more than once.
 --
 -- This backfills the missing rows so the journal matches reality. It creates no
 -- tables and alters no columns; it only records what is already true.
@@ -27,6 +36,7 @@
 --   SELECT 1 FROM information_schema.TABLES  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='account_relationships';    -- 0022
 --   SELECT 1 FROM information_schema.TABLES  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='slack_account_bindings';   -- 0024
 --   SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='interactions' AND COLUMN_NAME='gate_trace'; -- 0025
+--   SELECT 1 FROM information_schema.TABLES  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='interaction_attachments';  -- 0026
 --
 -- If any of them returns nothing, STOP: that migration is genuinely outstanding
 -- and must be applied rather than marked as done.
@@ -167,3 +177,7 @@ INSERT INTO `__drizzle_migrations` (`hash`, `created_at`)
 SELECT '9193d474ca3a99f97ff78148465cc05b5a71bd331321c2c6f6b6fd0649a6d85e', 1787761248350
 WHERE NOT EXISTS (SELECT 1 FROM `__drizzle_migrations` WHERE `hash` = '9193d474ca3a99f97ff78148465cc05b5a71bd331321c2c6f6b6fd0649a6d85e');
 
+-- 0026_chief_stephen_strange
+INSERT INTO `__drizzle_migrations` (`hash`, `created_at`)
+SELECT '72d30035461e70cf8cfe51bb8c407db66f3464f70d6f9d06d8cf50374a57e432', 1787786684647
+WHERE NOT EXISTS (SELECT 1 FROM `__drizzle_migrations` WHERE `hash` = '72d30035461e70cf8cfe51bb8c407db66f3464f70d6f9d06d8cf50374a57e432');

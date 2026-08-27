@@ -92,9 +92,19 @@ export type GateTraceRow = {
  * reached" would imply the pipeline stopped short when it did no such thing.
  */
 export function declareGateChecks(intents: readonly Intent[]): GateCheck[] {
-  const reads = intents.some(intent => ["OOS_RESULT", "LABEL_CLAIM_VARIANCE"].includes(intent));
-  const limits = reads || intents.includes("REGULATORY_LIMIT_QUESTION");
-  const serving = intents.includes("OOS_RESULT");
+  // Scoped to what the pipeline can actually record, not to what the intent
+  // sounds like it should involve. Result evidence is assembled only for
+  // OOS_RESULT (prototype.ts), so declaring result_ownership for a label-claim
+  // or regulatory question produced rows nothing could ever fill - and an
+  // unfilled row renders as "not reached", which asserts that an earlier check
+  // stopped the pipeline. Nothing had. The trace was stating a falsehood about
+  // its own run.
+  //
+  // Widening these predicates is the wrong repair: the fix is to extend result
+  // assembly to LABEL_CLAIM_VARIANCE, and to widen this at the same time.
+  const reads = intents.includes("OOS_RESULT");
+  const limits = reads;
+  const serving = reads;
   return GATE_CHECKS.filter(check =>
     check === "result_ownership" ? reads
       : check === "limit_resolved" ? limits
