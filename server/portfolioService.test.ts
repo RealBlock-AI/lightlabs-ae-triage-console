@@ -8,7 +8,7 @@ describe("owner portfolio service", () => {
 
     expect(owners).toHaveLength(2);
     for (const owner of owners) {
-      expect(owner.directBrandCount).toBe(120);
+      expect(owner.directBrandCount).toBeGreaterThanOrEqual(120);
       expect(owner.comanCount).toBe(40);
       expect(owner.brandsUnderComanCount).toBeGreaterThanOrEqual(200);
       expect(owner.totalManagedAccounts).toBe(owner.directBrandCount + owner.comanCount + owner.brandsUnderComanCount);

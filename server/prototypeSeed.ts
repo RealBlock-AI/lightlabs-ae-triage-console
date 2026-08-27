@@ -1,5 +1,6 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "./db";
+import { ensureCanonicalBootstrap } from "./canonicalBootstrap";
 import { products, orders, tests, users } from "../drizzle/schema";
 import { actionLimits, analyteCompanyUnits, analytes, assayCompanyPrices, assays, companies, companyMemberships, limitGroupSkuAssignments, limitGroups, partnerships, regulatoryLimits, reports, samples, shipments, skus, specifications, stabilityStudies, stabilityStudyTimePoints, testLimits, testResults, turnaroundTimes } from "../drizzle/canonicalSchema";
 import { ensureKnowledgeCatalog } from "./knowledge";
@@ -7,15 +8,23 @@ import { ensureKnowledgeCatalog } from "./knowledge";
 const now = () => new Date(); const stamp = () => ({ createdAt: now(), updatedAt: now() });
 const upsert = (db: NonNullable<Awaited<ReturnType<typeof getDb>>>, table: any, rows: any[]) => db.insert(table).values(rows).onDuplicateKeyUpdate({ set: { id: sql`values(id)` } });
 
+async function reconcilePrototypeSystemMappings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const productMappings = [["prod_north_protein", "co_northwind"], ["prod_lumen_pouch", "co_lumen"], ["prod_hidden", "co_hidden"], ["prod_benchmark", "co_benchmark"]] as const;
+  for (const [id, companyId] of productMappings) await db.update(products).set({ appAccountId: companyId, testingPlatformCompanyId: companyId }).where(eq(products.id, id));
+  const orderMappings = [["ord_north_latest", "co_northwind"], ["ord_lumen", "co_lumen"], ["ord_hidden", "co_hidden"]] as const;
+  for (const [id, companyId] of orderMappings) await db.update(orders).set({ appAccountId: companyId, testingPlatformCompanyId: companyId }).where(eq(orders.id, id));
+}
+
 export async function ensurePrototypeSeed() {
+  await ensureCanonicalBootstrap();
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
-  const existing = await db.select({ id: companies.id }).from(companies).limit(1); if (existing.length) { await ensureKnowledgeCatalog(); return; }
+  const existing = await db.select({ id: companies.id }).from(companies).limit(1); if (existing.length) { await reconcilePrototypeSystemMappings(db); await ensureKnowledgeCatalog(); return; }
   const created = stamp(); const past = new Date("2026-06-01T12:00:00Z"); const newer = new Date("2026-06-10T12:00:00Z"); const future = new Date(Date.now() + 120 * 24 * 60 * 60 * 1000);
   await upsert(db, users, [
-    { id: 9001, openId: "fixture-north-ops", name: "Priya Shah", firstName: "Priya", lastName: "Shah", email: "priya@northwind.demo", loginMethod: "fixture", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_NORTH_OPS", hubspotContactId: "hs_north_ops", limsId: "LIMS-U-9001", lastSignedIn: created.createdAt },
-    { id: 9002, openId: "fixture-lumen-qa", name: "Jordan Lee", firstName: "Jordan", lastName: "Lee", email: "jordan@lumen.demo", loginMethod: "fixture", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_LUMEN_QA", hubspotContactId: "hs_lumen_qa", limsId: "LIMS-U-9002", lastSignedIn: created.createdAt },
-    { id: 9003, openId: "fixture-coman", name: "Alex Morgan", firstName: "Alex", lastName: "Morgan", email: "alex@pinecrest.demo", loginMethod: "fixture", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_PINE_QC", hubspotContactId: "hs_pine_qc", limsId: "LIMS-U-9003", lastSignedIn: created.createdAt },
-    { id: 9004, openId: "fixture-denied", name: "Taylor Brooks", firstName: "Taylor", lastName: "Brooks", email: "taylor@denied.demo", loginMethod: "fixture", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_DENIED", hubspotContactId: "hs_denied", limsId: "LIMS-U-9004", lastSignedIn: created.createdAt },
+    { id: 9001, openId: "fixture-north-ops", name: "Priya Shah", firstName: "Priya", lastName: "Shah", email: "priya@northwind.demo", loginMethod: "slack", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_NORTH_OPS", hubspotContactId: "hs_north_ops", limsId: "LIMS-U-9001", lastSignedIn: created.createdAt },
+    { id: 9002, openId: "fixture-lumen-qa", name: "Jordan Lee", firstName: "Jordan", lastName: "Lee", email: "jordan@lumen.demo", loginMethod: "slack", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_LUMEN_QA", hubspotContactId: "hs_lumen_qa", limsId: "LIMS-U-9002", lastSignedIn: created.createdAt },
+    { id: 9003, openId: "fixture-coman", name: "Alex Morgan", firstName: "Alex", lastName: "Morgan", email: "alex@pinecrest.demo", loginMethod: "slack", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_PINE_QC", hubspotContactId: "hs_pine_qc", limsId: "LIMS-U-9003", lastSignedIn: created.createdAt },
+    { id: 9004, openId: "fixture-denied", name: "Taylor Brooks", firstName: "Taylor", lastName: "Brooks", email: "taylor@denied.demo", loginMethod: "slack", role: "user", staffuser: 0, confirmedAt: created.createdAt, slackWorkspaceId: "T_DEMO", slackUserId: "U_DENIED", hubspotContactId: "hs_denied", limsId: "LIMS-U-9004", lastSignedIn: created.createdAt },
   ]);
   await upsert(db, companies, [
     { id: "co_northwind", name: "Northwind Nutrition", paymentMethod: "invoice", limsId: "LIMS-CO-001", stripeId: "cus_north", hubspotCompanyId: "hs_north", ...created }, { id: "co_lumen", name: "Lumen Foods", paymentMethod: "invoice", limsId: "LIMS-CO-002", stripeId: "cus_lumen", hubspotCompanyId: "hs_lumen", ...created }, { id: "co_pinecrest", name: "Pinecrest Manufacturing", paymentMethod: "invoice", limsId: "LIMS-CO-003", stripeId: "cus_pine", hubspotCompanyId: "hs_pine", ...created }, { id: "co_hidden", name: "Hidden Brand", paymentMethod: "credit_card", limsId: "LIMS-CO-004", stripeId: "cus_hidden", hubspotCompanyId: "hs_hidden", ...created }, { id: "co_benchmark", name: "Benchmark Research", paymentMethod: "invoice", limsId: "LIMS-CO-005", stripeId: "cus_benchmark", hubspotCompanyId: "hs_benchmark", ...created },
@@ -55,5 +64,6 @@ export async function ensurePrototypeSeed() {
   await upsert(db, regulatoryLimits, [{ id: "rl_prop65_lead", name: "Prop 65", analyteId: "an_lead", citation: "Approved knowledge anchor required", limitType: "upper", limitUnit: "ug/serving", limitBasis: "per_serving", upperBound: "0.5", lowerBound: null, ...created }, { id: "rl_ab899_lead", name: "AB 899", analyteId: "an_lead", citation: "Approved knowledge anchor required", limitType: "upper", limitUnit: "ppb", limitBasis: "per_kg", upperBound: "5", lowerBound: null, ...created }]);
   await upsert(db, reports, [{ id: "report_lumen", testId: "test_lumen_8812", state: "published", attachedTo: "test", isPublic: 1, dateGenerated: newer, datePublished: newer, renderStatus: "ready", limsId: "LIMS-REPORT-01", ...created }, { id: "report_hidden", testId: "test_hidden", state: "published", attachedTo: "test", isPublic: 1, dateGenerated: newer, datePublished: newer, renderStatus: "ready", limsId: "LIMS-REPORT-02", ...created }]);
   await upsert(db, stabilityStudies, [{ id: "study_lumen", name: "Lumen pouch stability", companyId: "co_lumen", skuId: "sku_lumen_pouch", arm: "ambient", requiredUnits: 2, ...created }]); await upsert(db, stabilityStudyTimePoints, [{ id: "tp_lumen_6", stabilityStudyId: "study_lumen", monthOffset: 6, date: future, ...created }]);
+  await reconcilePrototypeSystemMappings(db);
   await ensureKnowledgeCatalog();
 }

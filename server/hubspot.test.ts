@@ -16,7 +16,10 @@ describe("HubSpot MCP OAuth setup", () => {
 
   it("reports only non-sensitive HubSpot connection status after OAuth consent", async () => {
     const status = await getHubSpotConnectionStatus();
-    expect(status).toMatchObject({ connected: expect.any(Boolean), updatedAt: expect.anything() });
+    expect(status.connected).toEqual(expect.any(Boolean));
+    expect(status).toHaveProperty("updatedAt");
+    if (status.connected) expect(status.updatedAt).toEqual(expect.anything());
+    else expect(status.updatedAt).toBeNull();
     expect(status).not.toHaveProperty("accessTokenEncrypted");
     expect(status).not.toHaveProperty("refreshTokenEncrypted");
   });

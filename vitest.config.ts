@@ -16,6 +16,7 @@ export default defineConfig({
     environment: "node",
     // Decides which database, if any, the suite may write to. The suite is
     // destructive; see server/testDatabaseGuard.ts.
+    globalSetup: ["./vitest.global-setup.ts"],
     setupFiles: ["./vitest.setup.ts"],
     include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
     testTimeout: 15_000,

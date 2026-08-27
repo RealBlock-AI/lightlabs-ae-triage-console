@@ -2,7 +2,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { hubspotContextSnapshots } from "../drizzle/schema";
 import { getDb } from "./db";
-import { getBySlackIdentity } from "./demoHubspot";
+import { getBySlackIdentity, seedDemoHubSpot, verifyClaim } from "./demoHubspot";
 import { getContactBySlackUser } from "./externalIdentity";
 import { getOwnerPortfolio } from "./portfolioService";
 
@@ -10,6 +10,8 @@ const dbTest = process.env.DATABASE_URL ? it : it.skip;
 
 describe("Launch99 Slack-to-app linkage", () => {
   dbTest("resolves Nic's verified Slack identity to Launch99 Agency, Sarah Chen, and fresh CRM context", async () => {
+    await seedDemoHubSpot();
+    await verifyClaim({ schema_version: "0.1", claim_id: `clm_launch99_link_${Date.now()}`, submitted_at: new Date().toISOString(), slack_team_id: "T091XR4PAQY", slack_user_id: "U_DEMO_VERIFY", slack_display_name: "Nic", claimed_full_name: "Nic Thatcher", claimed_email: "nthatcher@launch99.agency", claimed_company: "Launch99 Agency", claimed_email_source: "slack" }, "test");
     const slackIdentity = await getBySlackIdentity("T091XR4PAQY", "U_DEMO_VERIFY");
     expect(slackIdentity).toMatchObject({
       contact: { id: "demo_ct_nic", verificationStatus: "verified" },
