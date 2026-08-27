@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { timingSafeEqual } from "node:crypto";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, or } from "drizzle-orm";
 import { accounts, contactIdentities, contacts, demoHubspotContacts, externalSlackIdentityCandidates, slackAccountBindings, users } from "../drizzle/schema";
 import { getDb } from "./db";
 import { normalize } from "./demoHubspot";
@@ -57,6 +57,68 @@ async function persistBinding(input: { request: AccountBindingRequest; status: B
   await db.insert(slackAccountBindings).values({ bindingId: input.request.binding_id, schemaVersion: input.request.schema_version, requestedAt: new Date(input.request.requested_at), slackTeamId: input.request.slack.team_id, slackUserId: input.request.slack.user_id, slackDisplayName: input.request.slack.display_name ?? null, claimedFullName: input.request.claimed.full_name, claimedEmail: input.request.claimed.email, claimedCompany: input.request.claimed.company, emailSource: input.request.claimed.email_source, status: input.status, contactId: input.contactId ?? null, accountId: input.accountId ?? null, conflict: input.conflict ?? null, reviewUrl: reviewUrl(input.request.binding_id), message: input.message ?? null, createdAt: timestamp, updatedAt: timestamp });
 }
 
+type CrmCandidate = { accountId: string | null; normalizedName: string | null; normalizedCompany: string | null };
+type BindingClaim = { bindingId: string; contactId: string | null; slackTeamId: string; slackUserId: string };
+
+/** How much a CRM record backs up an email match. Never a gate, only a score. */
+export function corroborationOf(candidate: CrmCandidate, claimed: { full_name: string; company: string }) {
+  return (candidate.normalizedName === normalize(claimed.full_name) ? 1 : 0) + (candidate.normalizedCompany === normalize(claimed.company) ? 1 : 0);
+}
+
+/** Pick the CRM record an email claim refers to, or decline to pick.
+ *
+ *  Email is the identity claim; name and company corroborate it. Bobby prefills
+ *  the name from Slack's real_name, which routinely disagrees with the CRM
+ *  spelling - "Nicolas Thatcher" against "Nic Thatcher" - and a disagreement
+ *  there is not evidence that the email is wrong. Two records sharing an email
+ *  with equal corroboration is not a match anything can choose between, so it
+ *  returns no match rather than guessing a customer into the wrong account. */
+export function rankCrmMatches<T extends CrmCandidate>(matches: readonly T[], claimed: { full_name: string; company: string }) {
+  const ranked = matches.filter(candidate => candidate.accountId).sort((a, b) => corroborationOf(b, claimed) - corroborationOf(a, claimed));
+  const ambiguous = ranked.length > 1 && corroborationOf(ranked[0], claimed) === corroborationOf(ranked[1], claimed);
+  return { match: ambiguous ? undefined : ranked[0], ambiguous, corroboration: ranked[0] ? corroborationOf(ranked[0], claimed) : 0 };
+}
+
+/** Which of the still-`bound` rows a new decision has just made untrue.
+ *
+ *  A row matching the winner on both sides describes the same link under a
+ *  different binding id - a resubmission, not a displacement. Only rows that
+ *  disagree on one side have actually been displaced. */
+export function displacedBy<T extends BindingClaim>(overlapping: readonly T[], winner: { contactId: string; slackTeamId: string; slackUserId: string }) {
+  return overlapping.filter(row => row.contactId !== winner.contactId || row.slackTeamId !== winner.slackTeamId || row.slackUserId !== winner.slackUserId);
+}
+
+// A binding row is a claim that one Slack identity and one contact are linked.
+// When a later decision re-keys either side, the older rows are claims that are
+// no longer true - and the review queue renders them as live links. On 26 August
+// it showed two `bound` rows for one contact; only one of them was real.
+async function demoteDisplacedBindings(input: { keepBindingId: string; contactId: string; slackTeamId: string; slackUserId: string; timestamp: Date }) {
+  const db = await getDb(); if (!db) return [];
+  const overlapping = await db.select().from(slackAccountBindings).where(and(eq(slackAccountBindings.status, "bound"), ne(slackAccountBindings.bindingId, input.keepBindingId), or(eq(slackAccountBindings.contactId, input.contactId), and(eq(slackAccountBindings.slackTeamId, input.slackTeamId), eq(slackAccountBindings.slackUserId, input.slackUserId)))));
+  const displaced = displacedBy(overlapping, input);
+  for (const row of displaced) {
+    await db.update(slackAccountBindings).set({ status: "conflict", conflict: { reason: "displaced_by_later_binding", replaced_by: input.keepBindingId, previous_contact_id: row.contactId, previous_slack_user_id: row.slackUserId }, message: "This link was replaced by a later account-binding decision and is no longer active.", updatedAt: input.timestamp }).where(eq(slackAccountBindings.bindingId, row.bindingId));
+  }
+  return displaced.map(row => row.bindingId);
+}
+
+// A stored `bound` row is only true for as long as the binding still owns the
+// identity. Replaying a binding_id whose identity was later taken away used to
+// echo the stored `bound`, so Bobby would tell a customer they are linked while
+// get_contact_by_slack_user reported them unmapped. Re-check before echoing.
+async function reconcileStoredBinding(binding: typeof slackAccountBindings.$inferSelect) {
+  if (binding.status !== "bound" || !binding.contactId) return binding;
+  const db = await getDb(); if (!db) return binding;
+  const owned = (await db.select().from(contactIdentities).where(and(eq(contactIdentities.provider, "slack"), eq(contactIdentities.tenantId, binding.slackTeamId), eq(contactIdentities.externalId, binding.slackUserId), eq(contactIdentities.contactId, binding.contactId), eq(contactIdentities.verificationStatus, "verified"))).limit(1))[0];
+  if (owned) return binding;
+  const timestamp = now();
+  const conflict = { reason: "binding_no_longer_owns_identity", slack_user_id: binding.slackUserId, contact_id: binding.contactId };
+  const message = "This link is no longer active because the Slack identity was reassigned. Your account manager needs to review it.";
+  await db.update(slackAccountBindings).set({ status: "conflict", conflict, message, updatedAt: timestamp }).where(eq(slackAccountBindings.bindingId, binding.bindingId));
+  await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding_stale_replay", outcome: "accepted", statusCode: 200, slackWorkspaceId: binding.slackTeamId, slackUserId: binding.slackUserId, metadata: { bindingId: binding.bindingId, previousStatus: "bound", status: "conflict" } });
+  return { ...binding, status: "conflict" as const, conflict, message, updatedAt: timestamp };
+}
+
 export async function listBindingReviews(input?: { bindingId?: string }) {
   const db = await getDb(); if (!db) throw new Error("Database unavailable");
   const rows = input?.bindingId ? await db.select().from(slackAccountBindings).where(eq(slackAccountBindings.bindingId, input.bindingId)).limit(1) : await db.select().from(slackAccountBindings).orderBy(desc(slackAccountBindings.updatedAt)).limit(100);
@@ -92,7 +154,8 @@ export async function reviewBinding(input: { bindingId: string; action: "approve
   await db.insert(contactIdentities).values({ id: `ci_review_${binding.bindingId}`, contactId: contact.id, userId: contact.userId, provider: "slack", tenantId: binding.slackTeamId, externalId: binding.slackUserId, emailNormalized: binding.claimedEmail, verificationStatus: "verified", verificationMethod: "customer_claimed", verifiedAt: timestamp, revokedAt: null, verifiedByUserId: input.reviewedByUserId, attributes: { bindingId: binding.bindingId, emailSource: binding.emailSource, reviewAction: input.action }, createdAt: timestamp, updatedAt: timestamp }).onDuplicateKeyUpdate({ set: { contactId: contact.id, userId: contact.userId, emailNormalized: binding.claimedEmail, verificationStatus: "verified", verificationMethod: "customer_claimed", verifiedAt: timestamp, revokedAt: null, verifiedByUserId: input.reviewedByUserId, attributes: { bindingId: binding.bindingId, emailSource: binding.emailSource, reviewAction: input.action }, updatedAt: timestamp } });
   await db.update(externalSlackIdentityCandidates).set({ status: "mapped", resolvedContactId: contact.id, resolvedAt: timestamp, resolvedByUserId: input.reviewedByUserId, lastSeenAt: timestamp }).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, binding.slackTeamId), eq(externalSlackIdentityCandidates.slackUserId, binding.slackUserId)));
   await db.update(slackAccountBindings).set({ status: "bound", conflict: null, message, contactId: contact.id, accountId: account.id, updatedAt: timestamp }).where(eq(slackAccountBindings.bindingId, binding.bindingId));
-  await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding_reviewed", outcome: "accepted", statusCode: 200, slackWorkspaceId: binding.slackTeamId, slackUserId: binding.slackUserId, metadata: { bindingId: binding.bindingId, action: input.action, reviewedByUserId: input.reviewedByUserId, contactId: contact.id, accountId: account.id } });
+  const displaced = await demoteDisplacedBindings({ keepBindingId: binding.bindingId, contactId: contact.id, slackTeamId: binding.slackTeamId, slackUserId: binding.slackUserId, timestamp });
+  await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding_reviewed", outcome: "accepted", statusCode: 200, slackWorkspaceId: binding.slackTeamId, slackUserId: binding.slackUserId, metadata: { bindingId: binding.bindingId, action: input.action, reviewedByUserId: input.reviewedByUserId, contactId: contact.id, accountId: account.id, displacedBindingIds: displaced } });
   return (await listBindingReviews({ bindingId: binding.bindingId }))[0];
 }
 
@@ -107,14 +170,20 @@ export async function bobbyAccountBinding(req: Request, res: Response) {
   if (!request) return res.status(400).json({ status: "rejected", binding_id: null, conflict: null, review_url: null, message: "Invalid account-binding request. Use schema version 0.1 with a stable bnd_ binding_id and valid Slack identifiers." });
   const db = await getDb(); if (!db) return res.status(500).json(bindingResponse({ bindingId: request.binding_id, status: "rejected", message: "The account-binding service is unavailable." }));
   const existing = (await db.select().from(slackAccountBindings).where(eq(slackAccountBindings.bindingId, request.binding_id)).limit(1))[0];
-  if (existing) return res.json(await storedResponse(existing));
+  if (existing) return res.json(await storedResponse(await reconcileStoredBinding(existing)));
 
+  // Email is the identity claim. Name and company corroborate it; they do not
+  // gate it. Bobby prefills the name from Slack's real_name, which routinely
+  // disagrees with the CRM spelling - a real submission failed on "Nicolas
+  // Thatcher" against "Nic Thatcher" while the email matched exactly - and that
+  // disagreement is not evidence the email is wrong.
   const demoMatches = await db.select().from(demoHubspotContacts).where(eq(demoHubspotContacts.normalizedEmail, normalize(request.claimed.email)));
-  const demoContact = demoMatches.find(candidate => candidate.normalizedName === normalize(request.claimed.full_name) && candidate.normalizedCompany === normalize(request.claimed.company));
+  const { match: demoContact, ambiguous, corroboration } = rankCrmMatches(demoMatches, request.claimed);
   if (!demoContact?.accountId) {
-    await persistBinding({ request, status: "pending", message: "The request was recorded for AE review; an exact customer record was not yet available." });
-    await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding", outcome: "accepted", statusCode: 200, slackWorkspaceId: request.slack.team_id, slackUserId: request.slack.user_id, metadata: { bindingId: request.binding_id, status: "pending" } });
-    return res.json(bindingResponse({ bindingId: request.binding_id, status: "pending", message: "The request was recorded for AE review; an exact customer record was not yet available." }));
+    const unmatched = ambiguous ? "More than one customer record shares that email address, so your account manager needs to confirm which account to link." : "The request was recorded for AE review; an exact customer record was not yet available.";
+    await persistBinding({ request, status: "pending", message: unmatched });
+    await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding", outcome: "accepted", statusCode: 200, slackWorkspaceId: request.slack.team_id, slackUserId: request.slack.user_id, metadata: { bindingId: request.binding_id, status: "pending", emailMatches: demoMatches.length, ambiguous } });
+    return res.json(bindingResponse({ bindingId: request.binding_id, status: "pending", message: unmatched }));
   }
 
   const [contact] = await db.select().from(contacts).where(and(eq(contacts.accountId, demoContact.accountId), eq(contacts.email, request.claimed.email))).limit(1);
@@ -148,6 +217,7 @@ export async function bobbyAccountBinding(req: Request, res: Response) {
   await db.insert(contactIdentities).values({ id: `ci_binding_${request.binding_id}`, contactId: contact.id, userId: contact.userId, provider: "slack", tenantId: request.slack.team_id, externalId: request.slack.user_id, emailNormalized: request.claimed.email, verificationStatus: "verified", verificationMethod: "customer_claimed", verifiedAt: timestamp, revokedAt: null, verifiedByUserId: "bobby", attributes: { bindingId: request.binding_id, emailSource: request.claimed.email_source }, createdAt: timestamp, updatedAt: timestamp }).onDuplicateKeyUpdate({ set: { contactId: contact.id, userId: contact.userId, emailNormalized: request.claimed.email, verificationStatus: "verified", verificationMethod: "customer_claimed", verifiedAt: timestamp, revokedAt: null, verifiedByUserId: "bobby", attributes: { bindingId: request.binding_id, emailSource: request.claimed.email_source }, updatedAt: timestamp } });
   await db.update(externalSlackIdentityCandidates).set({ status: "mapped", resolvedContactId: contact.id, resolvedAt: timestamp, resolvedByUserId: "bobby", lastSeenAt: timestamp }).where(and(eq(externalSlackIdentityCandidates.slackWorkspaceId, request.slack.team_id), eq(externalSlackIdentityCandidates.slackUserId, request.slack.user_id)));
   await persistBinding({ request, status: "bound", contactId: contact.id, accountId: account.id, message: "Your Slack account is linked to your Light Labs account." });
-  await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding", outcome: "accepted", statusCode: 200, slackWorkspaceId: request.slack.team_id, slackUserId: request.slack.user_id, metadata: { bindingId: request.binding_id, status: "bound", contactId: contact.id, accountId: account.id } });
+  const displaced = await demoteDisplacedBindings({ keepBindingId: request.binding_id, contactId: contact.id, slackTeamId: request.slack.team_id, slackUserId: request.slack.user_id, timestamp });
+  await recordIntegrationAudit({ surface: "bobby", eventType: "account_binding", outcome: "accepted", statusCode: 200, slackWorkspaceId: request.slack.team_id, slackUserId: request.slack.user_id, metadata: { bindingId: request.binding_id, status: "bound", contactId: contact.id, accountId: account.id, corroboration, displacedBindingIds: displaced } });
   return res.json(bindingResponse({ bindingId: request.binding_id, status: "bound", message: "Your Slack account is linked to your Light Labs account.", account: { id: account.id, name: account.name, ownerId: account.ownerId } }));
 }
