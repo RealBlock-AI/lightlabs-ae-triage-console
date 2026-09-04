@@ -22,10 +22,19 @@ export function ThemeProvider({
   switchable = false,
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(() => {
-    if (switchable) {
+    if (!switchable) return defaultTheme;
+    // A stored choice is a decision the person made and it outranks everything.
+    // With no stored choice, the OS setting is a better guess than our default:
+    // someone whose machine is in dark mode did not ask for a white screen.
+    // Both reads can throw outright in a private window or with site data
+    // blocked, so neither is allowed to take the app down with it.
+    try {
       const stored = localStorage.getItem("theme");
-      return (stored as Theme) || defaultTheme;
-    }
+      if (stored === "light" || stored === "dark") return stored;
+    } catch { /* storage unavailable; fall through to the OS setting */ }
+    try {
+      if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+    } catch { /* matchMedia unavailable; fall through to the default */ }
     return defaultTheme;
   });
 
@@ -38,7 +47,9 @@ export function ThemeProvider({
     }
 
     if (switchable) {
-      localStorage.setItem("theme", theme);
+      try {
+        localStorage.setItem("theme", theme);
+      } catch { /* nothing to do: the theme still applies for this session */ }
     }
   }, [theme, switchable]);
 

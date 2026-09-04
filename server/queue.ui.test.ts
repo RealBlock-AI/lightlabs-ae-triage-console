@@ -22,7 +22,10 @@ describe("Queue screen contract", () => {
     // Confidence is last, and small and muted rather than bold.
     expect(page).toContain("Confidence");
     expect(page.indexOf('key: "confidence"')).toBeGreaterThan(page.indexOf('key: "sla"'));
-    expect(page).toMatch(/confidence[\s\S]{0,200}text-\[11px\][\s\S]{0,40}text-\[#8a968f\]/i);
+    // Confidence stays small and faint: it is context for the lane, never a
+    // number an AE is meant to act on. The faintness is now a role rather than
+    // a hex, so it holds in both themes instead of only the light one.
+    expect(page).toMatch(/confidence[\s\S]{0,200}text-\[11px\][\s\S]{0,40}text-ink-faint/i);
 
     // The SLA cell is the only thing in the row that changes colour.
     expect(page).toContain("row.slaUrgent ? \"lane-ink-escalate\"");

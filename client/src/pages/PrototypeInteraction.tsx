@@ -83,10 +83,10 @@ export default function PrototypeInteraction() {
     return () => window.clearInterval(tick);
   }, []);
 
-  if (itemQuery.isLoading) return <div className="p-8 text-[13px] text-[#60766c]">Loading the packet…</div>;
+  if (itemQuery.isLoading) return <div className="p-8 text-[13px] text-ink-muted">Loading the packet…</div>;
   if (!item) return (
     <section className="p-8">
-      <button onClick={() => navigate("/")} className="data text-[12px] text-[#176344]">Back to the queue</button>
+      <button onClick={() => navigate("/")} className="data text-[12px] text-ok">Back to the queue</button>
       <h1 className="mt-4 font-serif text-2xl font-semibold">That interaction was not found.</h1>
     </section>
   );
@@ -113,24 +113,24 @@ export default function PrototypeInteraction() {
   return (
     <section className="mx-auto max-w-6xl px-5 pb-10 md:px-8">
       {/* Header, sticky - the account, the lane and the clock stay with you. */}
-      <header className="sticky top-0 z-20 -mx-5 mb-3 border-b border-[#2b3531] bg-[#e9ede8] px-5 pb-2 pt-3 md:-mx-8 md:px-8">
-        <button onClick={() => navigate("/")} className="data mb-1.5 inline-flex items-center gap-1.5 text-[11px] text-[#3d4841] hover:text-[#176344]">
-          <ArrowLeft size={13} /> queue <span className="text-[#8a968f]">· esc</span>
+      <header className="sticky top-0 z-20 -mx-5 mb-3 border-b border-inverse-line bg-sunken-strong px-5 pb-2 pt-3 md:-mx-8 md:px-8">
+        <button onClick={() => navigate("/")} className="data mb-1.5 inline-flex items-center gap-1.5 text-[11px] text-ink hover:text-ok">
+          <ArrowLeft size={13} /> queue <span className="text-ink-faint">· esc</span>
         </button>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="font-serif text-[22px] font-semibold leading-tight tracking-tight">{item.account}</h1>
           <span className={laneBadgeClass(lane)}>{LANE[lane].label}</span>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2">
-          <p className="data text-[11px] text-[#67746e]">
+          <p className="data text-[11px] text-ink-muted">
             {item.contact} · tier {item.tier} · {item.category} · received {received}
           </p>
           {/* The clock the AE watches, not the resolution target. It pauses
               outright while the customer has the question. */}
           {paused ? (
-            <p className="data text-[11px] text-[#67746e]">sla paused · waiting on customer</p>
+            <p className="data text-[11px] text-ink-muted">sla paused · waiting on customer</p>
           ) : (
-            <p className={`data text-[11px] ${clock.urgent ? "lane-ink-escalate" : "text-[#67746e]"}`}>sla {clock.label}</p>
+            <p className={`data text-[11px] ${clock.urgent ? "lane-ink-escalate" : "text-ink-muted"}`}>sla {clock.label}</p>
           )}
         </div>
       </header>
@@ -140,15 +140,15 @@ export default function PrototypeInteraction() {
         <div className="flex flex-col gap-3">
           {/* The only left-rail accent in the design: these are the customer's
               words, not ours. */}
-          <article className="border border-dashed border-[#a3aea8] border-l-[3px] border-l-[#2b3531] bg-[#f4f6f2] px-3.5 py-3">
-            <p className="data text-[10px] uppercase tracking-[.13em] text-[#8a968f]">Customer, verbatim</p>
-            <p className="mt-1.5 text-[13px] italic leading-[1.55] text-[#28372f]">“{item.rawText}”</p>
+          <article className="border border-dashed border-line-strong border-l-[3px] border-l-inverse-line bg-sunken px-3.5 py-3">
+            <p className="data text-[10px] uppercase tracking-[.13em] text-ink-faint">Customer, verbatim</p>
+            <p className="mt-1.5 text-[13px] italic leading-[1.55] text-ink">“{item.rawText}”</p>
           </article>
 
           {item.dualVerdict && <Verdict {...item.dualVerdict} />}
 
-          <article className="border border-[#2b3531]">
-            <p className="data border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2 text-[10px] uppercase tracking-[.13em] text-[#3d4841]">
+          <article className="border border-inverse-line">
+            <p className="data border-b border-inverse-line bg-sunken-strong px-3.5 py-2 text-[10px] uppercase tracking-[.13em] text-ink">
               Gate trace · read top to bottom
             </p>
             {item.gateTrace?.length ? (
@@ -156,8 +156,8 @@ export default function PrototypeInteraction() {
                 {item.gateTrace.map(row => (
                   <li
                     key={row.check}
-                    className={`flex items-baseline gap-2.5 border-b border-dashed border-[#cfd8d2] px-3.5 py-1.5 last:border-b-0 ${
-                      row.status === "stop" ? "lane-escalate" : row.status === "not_reached" ? "text-[#98a29d]" : "text-[#28372f]"
+                    className={`flex items-baseline gap-2.5 border-b border-dashed border-line-strong px-3.5 py-1.5 last:border-b-0 ${
+                      row.status === "stop" ? "lane-escalate" : row.status === "not_reached" ? "text-ink-faint" : "text-ink"
                     }`}
                   >
                     <span className="data w-[14px] shrink-0 text-[12px]">{GLYPH[row.status]}</span>
@@ -167,7 +167,7 @@ export default function PrototypeInteraction() {
                 ))}
               </ol>
             ) : (
-              <p className="px-3.5 py-2.5 text-[12px] text-[#67746e]">
+              <p className="px-3.5 py-2.5 text-[12px] text-ink-muted">
                 This interaction predates the gate trace, so its checks were not recorded.
               </p>
             )}
@@ -176,26 +176,26 @@ export default function PrototypeInteraction() {
 
         {/* Right column - what do I do. */}
         <div className="flex flex-col gap-3">
-          <article className="border border-[#2b3531]">
-            <p className="data border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2 text-[10px] uppercase tracking-[.13em] text-[#3d4841]">Evidence</p>
+          <article className="border border-inverse-line">
+            <p className="data border-b border-inverse-line bg-sunken-strong px-3.5 py-2 text-[10px] uppercase tracking-[.13em] text-ink">Evidence</p>
             <div className="flex flex-col gap-2.5 px-3.5 py-3">
               {evidence.length ? evidence.map((entry, index) => {
                 const flag = flagFor(entry);
                 return (
                   <div key={index} className="border-l-2 pl-2.5" style={{ borderColor: flag.rule }}>
-                    <p className="text-[12px] leading-[1.5] text-[#28372f]"><b className="font-semibold">{entry.label}.</b> {entry.value}</p>
+                    <p className="text-[12px] leading-[1.5] text-ink"><b className="font-semibold">{entry.label}.</b> {entry.value}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className="data text-[10px] text-[#8a968f]">{entry.source}</span>
+                      <span className="data text-[10px] text-ink-faint">{entry.source}</span>
                       <span className={`lane-badge ${flag.badge}`}>{flag.label}</span>
                     </div>
                   </div>
                 );
-              }) : <p className="text-[12px] text-[#67746e]">No evidence was assembled for this interaction.</p>}
+              }) : <p className="text-[12px] text-ink-muted">No evidence was assembled for this interaction.</p>}
             </div>
           </article>
 
-          <article className="border border-[#2b3531] px-3.5 py-3">
-            <p className="data text-[10px] uppercase tracking-[.13em] text-[#8a968f]">Account posture</p>
+          <article className="border border-inverse-line px-3.5 py-3">
+            <p className="data text-[10px] uppercase tracking-[.13em] text-ink-faint">Account posture</p>
             {/* gap-4, so the cells never butt together and read as one number. */}
             <div className="mt-2 flex flex-wrap gap-4">
               <Stat value={item.posture.openOrders} label="open orders" />
@@ -205,19 +205,19 @@ export default function PrototypeInteraction() {
             </div>
           </article>
 
-          <article className="border border-[#2b3531]">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2b3531] bg-[#e9ede8] px-3.5 py-2">
-              <p className="data text-[10px] uppercase tracking-[.13em] text-[#3d4841]">
+          <article className="border border-inverse-line">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-inverse-line bg-sunken-strong px-3.5 py-2">
+              <p className="data text-[10px] uppercase tracking-[.13em] text-ink">
                 Draft — editable in place {dirty && <span className="lane-ink-escalate">· unsaved</span>}
               </p>
               {/* Kept adjacent to the number, always. This sentence is the
                   mechanism that stops confidence being read as the decision. */}
-              <p className="data text-[10px] text-[#8a968f]">
+              <p className="data text-[10px] text-ink-faint">
                 conf {item.confidence === null ? "--" : Number(item.confidence).toFixed(2)} · did not set this lane
               </p>
             </div>
             <textarea
-              className="block min-h-[104px] w-full resize-y bg-transparent px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#28372f] outline-none"
+              className="block min-h-[104px] w-full resize-y bg-transparent px-3.5 py-2.5 text-[13px] leading-[1.55] text-ink outline-none"
               value={draft}
               onChange={event => { setDraft(event.target.value); setDirty(true); }}
               onBlur={() => { if (dirty) saveDraft.mutate({ id: item.id, draft }); }}
@@ -250,7 +250,7 @@ export default function PrototypeInteraction() {
               <textarea
                 id="compose"
                 autoFocus
-                className="mt-1.5 block min-h-[64px] w-full resize-y border border-current bg-white px-2.5 py-2 text-[12px] leading-[1.5] text-[#28372f] outline-none"
+                className="mt-1.5 block min-h-[64px] w-full resize-y border border-current bg-panel px-2.5 py-2 text-[12px] leading-[1.5] text-ink outline-none"
                 value={words}
                 onChange={event => setWords(event.target.value)}
                 placeholder={composing === "override"
@@ -283,8 +283,8 @@ export default function PrototypeInteraction() {
 function Stat({ value, label }: { value: number | string; label: string }) {
   return (
     <div>
-      <p className="data text-[20px] leading-none text-[#13261f]">{value}</p>
-      <p className="data mt-1 text-[10px] text-[#8a968f]">{label}</p>
+      <p className="data text-[20px] leading-none text-ink-strong">{value}</p>
+      <p className="data mt-1 text-[10px] text-ink-faint">{label}</p>
     </div>
   );
 }
